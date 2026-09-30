@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# shellcheck source=script/env
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env"
+
+failures=0
+uses_count=0
+checkout_count=0
+persist_count=0
+terraform_pin_count=0
+
+while IFS= read -r workflow; do
+  while IFS= read -r line; do
+    reference="${line#*@}"
+    reference="${reference%%[[:space:]#]*}"
+    uses_count=$((uses_count + 1))
+    if [[ ! "$reference" =~ ^[0-9a-f]{40}$ ]]; then
+      printf 'error: %s has a non-immutable action reference: %s\n' "$workflow" "$line" >&2
+      failures=$((failures + 1))
+    fi
+  done < <(grep -E '^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*[^[:space:]#]+@' "$workflow" || true)
+
+  current_checkouts="$(grep -cE 'uses:[[:space:]]*actions/checkout@' "$workflow" || true)"
+  current_persist="$(grep -cE 'persist-credentials:[[:space:]]*false' "$workflow" || true)"
+  checkout_count=$((checkout_count + current_checkouts))
+  persist_count=$((persist_count + current_persist))
+
+  while IFS= read -r version_line; do
+    terraform_pin_count=$((terraform_pin_count + 1))
+    if [[ "$version_line" != *"terraform_version: $TERRAFORM_VERSION"* ]]; then
+      printf 'error: %s has a Terraform version that differs from .terraform-version: %s\n' "$workflow" "$version_line" >&2
+      failures=$((failures + 1))
+    fi
+  done < <(grep -E '^[[:space:]]+terraform_version:' "$workflow" || true)
+done < <(find "$ROOT/.github/workflows" -type f \( -name '*.yml' -o -name '*.yaml' \) -print | sort)
+
+if [[ $uses_count -eq 0 ]]; then
+  printf 'error: no action references found\n' >&2
+  failures=$((failures + 1))
+fi
+
+if [[ $checkout_count -ne $persist_count ]]; then
+  printf 'error: every checkout must set persist-credentials: false\n' >&2
+  failures=$((failures + 1))
+fi
+
+if grep -R -E 'uses:[[:space:]]*actions/cache@|^[[:space:]]+cache:' "$ROOT/.github/workflows" >/dev/null; then
+  printf 'error: cache mode must remain none\n' >&2
+  failures=$((failures + 1))
+fi
+
+if [[ $terraform_pin_count -eq 0 ]]; then
+  printf 'error: workflows do not use Terraform %s from .terraform-version\n' "$TERRAFORM_VERSION" >&2
+  failures=$((failures + 1))
+fi
+
+if [[ -e "$ROOT/.terraform.lock.hcl" ]]; then
+  printf 'error: terraform_data is built in; an external provider lock file was not expected\n' >&2
+  failures=$((failures + 1))
+fi
+
+[[ $failures -eq 0 ]] || exit 1
+printf 'Workflow action pins, checkout settings, toolchain version, and cache mode are valid.\n'

@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# shellcheck source=script/env
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env"
+require_terraform
+
+acceptance_dir="$(make_runtime_dir)"
+trap 'remove_runtime_dir "$acceptance_dir"' EXIT
+mkdir -p "$acceptance_dir/runtime" "$acceptance_dir/logs"
+
+revision="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+RUNNER_TEMP="$acceptance_dir/runtime" DEPLOYMENT_SHA="$revision" "$ROOT/script/noop" \
+  >"$acceptance_dir/logs/noop.log" 2>&1
+grep -F "Noop completed for revision $revision; no state was applied." "$acceptance_dir/logs/noop.log" >/dev/null
+
+RUNNER_TEMP="$acceptance_dir/runtime" DEPLOYMENT_SHA="$revision" "$ROOT/script/deploy" \
+  >"$acceptance_dir/logs/deploy.log" 2>&1
+grep -F "Applied and verified local state at revision $revision; cleanup is still pending." "$acceptance_dir/logs/deploy.log" >/dev/null
+grep -F 'Deployment demonstration completed; local Terraform state destroyed.' "$acceptance_dir/logs/deploy.log" >/dev/null
+
+if find "$acceptance_dir/runtime" -mindepth 1 -print -quit | grep -q .; then
+  die "noop or deploy left temporary state behind"
+fi
+
+set +e
+PATH="$ROOT/test/fixtures:$PATH" \
+  FAKE_TERRAFORM_FAILURE=apply-and-cleanup \
+  RUNNER_TEMP="$acceptance_dir/runtime" \
+  DEPLOYMENT_SHA="$revision" \
+  "$ROOT/script/deploy" >"$acceptance_dir/logs/apply-failure.log" 2>&1
+apply_status=$?
+
+PATH="$ROOT/test/fixtures:$PATH" \
+  FAKE_TERRAFORM_FAILURE=destroy \
+  RUNNER_TEMP="$acceptance_dir/runtime" \
+  DEPLOYMENT_SHA="$revision" \
+  "$ROOT/script/deploy" >"$acceptance_dir/logs/destroy-failure.log" 2>&1
+destroy_status=$?
+set -e
+
+[[ $apply_status -eq 42 ]] || die "apply failure status was not preserved: $apply_status"
+[[ $destroy_status -eq 43 ]] || die "destroy failure was not reported: $destroy_status"
+
+if grep -F 'Applied and verified local state' "$acceptance_dir/logs/apply-failure.log" >/dev/null; then
+  die "failed apply was reported as a verified deployment"
+fi
+if grep -F 'Deployment demonstration completed' "$acceptance_dir/logs/destroy-failure.log" >/dev/null; then
+  die "failed destroy was reported as successful"
+fi
+
+if find "$acceptance_dir/runtime" -mindepth 1 -print -quit | grep -q .; then
+  die "failure cleanup left temporary state behind"
+fi
+
+printf 'Noop, deploy, local-state cleanup, and failure-result acceptance checks passed.\n'

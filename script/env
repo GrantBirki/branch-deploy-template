@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+TERRAFORM_VERSION="$(tr -d '[:space:]' < "$ROOT/.terraform-version")"
+
+export ROOT TERRAFORM_VERSION
+
+die() {
+  printf 'error: %s\n' "$*" >&2
+  exit 1
+}
+
+require_terraform() {
+  command -v terraform >/dev/null 2>&1 || die "Terraform ${TERRAFORM_VERSION} is required"
+
+  local actual
+  actual="$(terraform version | sed -n '1s/^Terraform v//p')"
+  [[ "$actual" == "$TERRAFORM_VERSION" ]] || die "Terraform ${TERRAFORM_VERSION} is required; found ${actual:-unknown}"
+}
+
+make_runtime_dir() {
+  local base
+  base="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+  base="${base%/}"
+  [[ -n "$base" && "$base" != "/" ]] || die "refusing unsafe temporary directory root"
+  mkdir -p "$base"
+  mktemp -d "$base/branch-deploy-template.XXXXXX"
+}
+
+remove_runtime_dir() {
+  local directory="$1"
+  local base
+  base="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
+  base="${base%/}"
+
+  case "$directory" in
+    "$base"/branch-deploy-template.*) rm -rf -- "$directory" ;;
+    *) printf 'error: refusing to remove unsafe runtime directory: %s\n' "$directory" >&2; return 1 ;;
+  esac
+}
