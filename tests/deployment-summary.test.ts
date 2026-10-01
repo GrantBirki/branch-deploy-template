@@ -83,7 +83,7 @@ test("resource-only summaries do not claim that outputs or state are unchanged",
       output_changes: { receipt: { actions: ["update"], before: "old", after: "new" } },
     }, identity);
     const message = renderSummary(JSON.stringify(summary), identity, "success");
-    assert.equal(message, "**Resources: no changes planned.**");
+    assert.equal(message, "✅ **Resources: no changes planned.**");
     assert.ok(!message.includes("Your infrastructure matches the configuration"));
     assert.ok(!message.includes("receipt"));
   }

@@ -10,7 +10,7 @@ The workflow's [summary adapter](../.github/scripts/deployment-summary.ts) valid
 
 A deploy comment labels those groups **Planned changes**. Its success status comes from the execution job, which includes apply, verification, and destroy in this disposable demonstration. It has no separate actual-apply totals. The comment must not turn planned counts into completed counts or suggest that the example leaves resources deployed.
 
-An empty validated resource-action list produces **Resources: no changes planned.** and no empty disclosure. The summary excludes outputs, state moves, and plan completeness, so it cannot support the stronger **No changes.** example below. It also cannot distinguish output-only work from other omitted effects. Failed, cancelled, skipped, or unknown execution keeps its explicit job result beside any available planned groups. Missing or invalid summaries retain that result and the workflow log link.
+An empty validated resource-action list produces ✅ **Resources: no changes planned.** and no empty disclosure. The summary excludes outputs, state moves, and plan completeness, so it cannot support the stronger **No changes.** example below. It also cannot distinguish output-only work from other omitted effects. Failed, cancelled, skipped, or unknown execution keeps its explicit job result beside any available planned groups. Missing or invalid summaries retain that result and the workflow log link.
 
 The richer zero-change, output-only, and actual-apply cases below are presentation contracts for derived projects once they capture and validate the necessary evidence. They are not claims about fields this template currently collects. Keep the existing [execution boundaries](security.md#issueops-jobs) and [adaptation guidance](adapting.md); no provider, backend, credential, or lifecycle changes are needed to adopt the layout.
 
@@ -45,7 +45,7 @@ Plan: 0 to add, 0 to change, 0 to destroy.
 </details>
 ````
 
-Use this only when the complete successful plan establishes no resource, import, output, pending read, or other state/action work. Do not infer “Your infrastructure matches the configuration” from an empty resource-action list. If the only available evidence is the bounded resource subset, use **Resources: no changes planned.** and omit the unsupported complete-plan result. An empty or unavailable Plan disclosure should be omitted rather than filled with repeated reassurance.
+Use this only when the complete successful plan establishes no resource, import, output, pending read, or other state/action work. Do not infer “Your infrastructure matches the configuration” from an empty resource-action list. If the only available evidence is the bounded resource subset, use ✅ **Resources: no changes planned.** and omit the unsupported complete-plan result. An empty or unavailable Plan disclosure should be omitted rather than filled with repeated reassurance.
 
 ## 2. Import-only noop
 
@@ -179,7 +179,7 @@ These are result-section replacements beneath the same heading, status, Logs, an
 For a successful output-only plan:
 
 ````markdown
-**Resources: no changes planned.**
+✅ **Resources: no changes planned.**
 
 ### Outputs (1)
 

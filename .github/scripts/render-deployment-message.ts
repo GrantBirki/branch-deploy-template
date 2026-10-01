@@ -313,7 +313,7 @@ export function renderResourceChangeSummary(
   lines.push(...renderSection("Delete", "🔴", summary.deletes));
 
   if (lines.length === 0) {
-    lines.push("**Resources: no changes planned.**");
+    lines.push("✅ **Resources: no changes planned.**");
   }
 
   return lines.join("\n").trimEnd();
