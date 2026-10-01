@@ -1,4 +1,3 @@
----
 name: branch deploy
 
 on:
@@ -34,6 +33,9 @@ jobs:
       context: ${{ steps.branch-deploy.outputs.context }}
       continue: ${{ steps.branch-deploy.outputs.continue }}
       noop: ${{ steps.branch-deploy.outputs.noop }}
+      pr_number: ${{ steps.branch-deploy.outputs.issue_number }}
+      ref: ${{ steps.branch-deploy.outputs.ref }}
+      sha_deployment: ${{ steps.branch-deploy.outputs.sha_deployment }}
       sha: ${{ steps.branch-deploy.outputs.sha }}
       terraform_version: ${{ steps.version.outputs.version }}
     steps:
@@ -137,3 +139,26 @@ jobs:
           context: ${{ needs.branch-deploy.outputs.context }}
           job_results: ${{ toJSON(needs.*.result) }}
           result_mode: true
+
+  pr-status:
+    name: pr status
+    needs: [branch-deploy, terraform, status]
+    if: >-
+      ${{
+        always() &&
+        needs.branch-deploy.outputs.continue == 'true' &&
+        fromJSON(needs.branch-deploy.outputs.context).run_attempt == github.run_attempt &&
+        needs.branch-deploy.outputs.sha_deployment == '' &&
+        needs.branch-deploy.outputs.ref != github.event.repository.default_branch
+      }}
+    permissions:
+      contents: read
+      checks: read
+      statuses: read
+      pull-requests: write
+    uses: ./.github/workflows/pr-status.yml
+    with:
+      transition: ${{ needs.branch-deploy.outputs.noop == 'true' && 'noop' || 'deploy' }}
+      pr_number: ${{ fromJSON(needs.branch-deploy.outputs.pr_number) }}
+      expected_head_sha: ${{ needs.branch-deploy.outputs.sha }}
+      operation_result: ${{ needs.terraform.result }}

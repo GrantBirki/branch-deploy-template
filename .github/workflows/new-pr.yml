@@ -1,23 +1,35 @@
----
 name: new pull request
 
 on:
-  pull_request_target:  # zizmor: ignore[dangerous-triggers] trusted metadata only; no candidate checkout or execution
-    branches: [main]
+  pull_request:
+    branches:
+      - main
     types: [opened]
 
-permissions: {}
+permissions:
+  contents: read
 
 jobs:
   new-pr:
-    name: new pull request
-    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
-    runs-on: ubuntu-latest
     permissions:
+      contents: read
       pull-requests: write
+    runs-on: ubuntu-latest
+
     steps:
-      - name: deployment instructions
-        uses: GrantBirki/comment@937820f3623fd0e300294bcc64ac7577fc0ad4cc  # v3.0.3
+      - name: fence
+        uses: openai/fence@6ddc6df2e7dd8826022809a8143573247fb3b486 # pin@v0.10.3
+        with:
+          mode: audit
+
+      - name: checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # pin@v6
+        with:
+          persist-credentials: false
+
+      - name: comment with deployment instructions
+        uses: GrantBirki/comment@608e41b19bc973020ec0e189ebfdae935d7fe0cc # pin@v2.1.1
+        continue-on-error: true
         with:
           body: |
             ### 👋 Thanks for opening a pull request!

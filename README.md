@@ -49,16 +49,20 @@ The [unlock on merge workflow](.github/workflows/unlock-on-merge.yml) asks Branc
 
 Create these repository labels before enabling the metadata workflows:
 
-- `deploy: ready`
-- `deploy: needs attention`
+- `needs-noop`
+- `ready-for-review`
+- `ready-for-deployment`
+- `ready-to-merge`
 
-The `new pull request` workflow leaves deployment instructions. The `pr status` workflow uses the released [GrantBirki/pr-status](https://github.com/GrantBirki/pr-status/tree/v3.0.0) action to evaluate GitHub's review decision, at least one current non-bot approval, a non-draft pull request, and passing CI. It applies `deploy: ready` when those checks pass and `deploy: needs attention` otherwise. Missing CI evidence fails the evaluation.
+The `new pull request` workflow embeds the deployment instructions in its comment step. The `pr-status` workflow uses [GrantBirki/pr-status](https://github.com/GrantBirki/pr-status/tree/c5f7a6585b4a86b0bd618c4bac9f5197318c8d6b) in branch-deploy mode to maintain the current lifecycle label. New commits need a noop. A successful noop moves to review or deployment readiness, depending on approval. A successful deployment reaches merge readiness only while review policy passes. Failed or stale results cannot advance the current head. Draft and closed pull requests have no managed label.
 
-The small event adapter resolves affected pull requests, ignores forks and deleted source repositories, and clears labels when a pull request closes or its head changes during evaluation. It never checks out candidate content. A review is current according to GitHub's review policy; configure dismissal of stale approvals when approvals must be tied to the latest commit. Labels do not require a prior noop and do not record deployment completion.
+Pull request lifecycle and submitted or dismissed review events run the status workflow directly. After an admitted noop or deploy, the IssueOps workflow calls it with the trusted pull request number, selected SHA, operation type, and Terraform job result. Stable-branch and explicit-SHA deployments do not update a pull request's lifecycle label. The status workflow never checks out candidate content or consumes candidate output, artifacts, or caches.
 
-`pr status` handles submitted and dismissed reviews directly and fetches the current review state from GitHub. [Review events run the PR workflow revision](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review), so this path trusts contributors with permission to push branches to the repository. Fork review runs are skipped. Pull request lifecycle, CI completion, and commit status events use the default-branch workflow.
+The policy requires GitHub's review decision, at least one current non-bot approval, and a non-draft pull request. It does not include CI in the label evaluation; Branch Deploy checks CI independently during admission. Review currency follows GitHub's policy, so configure dismissal of stale approvals when approvals must be tied to the latest commit.
 
-These labels are informational. Branch Deploy remains the authorization gate and independently enforces actor permissions, reviews, checks, confirmation, fork denial, and exact-SHA selection.
+[Pull request and review events use the PR workflow revision](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review). These metadata workflows trust contributors who can push repository branches. Public fork tokens are read-only, so lifecycle label updates require a same-repository pull request. The welcome comment is best-effort and may fail for forks. Both metadata workflows run the public [Fence action](https://github.com/openai/fence) in audit mode.
+
+These labels are informational. Branch Deploy independently enforces actor permissions, reviews, checks, confirmation, fork denial, and exact-SHA selection. The status job queues label updates for each pull request; Terraform runs still use separate disposable state.
 
 ## Default-branch deploy
 

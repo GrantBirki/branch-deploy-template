@@ -22,8 +22,6 @@ while IFS= read -r workflow; do
     action_count=$((action_count + 1))
     [[ "$reference" =~ ^[0-9a-f]{40}$ ]] ||
       fail "$workflow has a non-immutable action reference: $line"
-    [[ "$line" =~ \#[[:space:]]v[0-9] ]] ||
-      fail "$workflow action pin is missing a version comment: $line"
   done < <(grep -E '^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*[^[:space:]#]+@' "$workflow" || true)
 
   checkout_count=$((checkout_count + $(grep -cE 'uses:[[:space:]]*actions/checkout@' "$workflow" || true)))

@@ -1,123 +1,54 @@
----
-name: pr status
+name: pr-status
 
 on:
-  pull_request_target:  # zizmor: ignore[dangerous-triggers] trusted metadata only; no candidate checkout or execution
-    branches: [main]
+  pull_request:
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
   pull_request_review:
     types: [submitted, dismissed]
-  status:
-  workflow_run:  # zizmor: ignore[dangerous-triggers] API metadata only; no artifacts or candidate execution
-    workflows: [lint, test, acceptance]
-    types: [completed]
+  workflow_call:
+    inputs:
+      transition:
+        type: string
+        default: ""
+      pr_number:
+        type: number
+        default: 0
+      expected_head_sha:
+        type: string
+        default: ""
+      operation_result:
+        type: string
+        default: ""
 
-permissions: {}
+permissions:
+  contents: read
+  checks: read
+  statuses: read
+  pull-requests: write
 
 jobs:
-  resolve:
-    name: resolve
-    if: >-
-      ${{
-        github.event_name != 'pull_request_review' ||
-        github.event.pull_request.head.repo.full_name == github.repository
-      }}
+  branch-deploy-status:
+    name: branch-deploy-status
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      pulls: ${{ steps.pulls.outputs.pulls }}
+    timeout-minutes: 5
+    concurrency:
+      group: branch-deploy-status-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr_number || github.event.issue.number || github.run_id }}
+      queue: max
     steps:
-      - name: find pull requests
-        id: pulls
-        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71  # v9.0.0
+      - name: fence
+        uses: openai/fence@6ddc6df2e7dd8826022809a8143573247fb3b486 # pin@v0.10.3
         with:
-          script: |
-            const numbers = new Set();
-            const add = (value) => {
-              const number = Number(value);
-              if (Number.isSafeInteger(number) && number > 0) numbers.add(number);
-            };
-            add(context.payload.pull_request?.number);
-            for (const pull of context.payload.workflow_run?.pull_requests || []) add(pull.number);
-            if (context.eventName === "status") {
-              const pulls = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
-                ...context.repo, commit_sha: context.payload.sha, per_page: 100
-              });
-              for (const pull of pulls) add(pull.number);
-            }
-            core.setOutput("pulls", [...numbers]);
+          mode: audit
 
-  pr-status:
-    name: pr status (${{ matrix.pull }})
-    needs: resolve
-    if: ${{ needs.resolve.outputs.pulls != '[]' }}
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        pull: ${{ fromJSON(needs.resolve.outputs.pulls) }}
-    permissions:
-      checks: read
-      contents: read
-      pull-requests: write
-      statuses: read
-    steps:
-      - name: current pull request
-        id: pull
-        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71  # v9.0.0
-        env:
-          PULL_REQUEST: ${{ matrix.pull }}
+      - name: reconcile branch-deploy state
+        uses: GrantBirki/pr-status@c5f7a6585b4a86b0bd618c4bac9f5197318c8d6b # pin@main
         with:
-          script: |
-            let pull;
-            try {
-              ({data: pull} = await github.rest.pulls.get({
-                ...context.repo, pull_number: Number(process.env.PULL_REQUEST)
-              }));
-            } catch (error) {
-              if (error.status === 404) return;
-              throw error;
-            }
-            if (pull.head.repo?.full_name !== context.payload.repository.full_name) return;
-            core.setOutput("head", pull.head.sha);
-            core.setOutput("open", pull.state === "open");
-
-      - name: evaluate status
-        id: status
-        if: ${{ steps.pull.outputs.open == 'true' }}
-        uses: GrantBirki/pr-status@90636f5a04ca4a039bfae198f9bf74996fa636df  # v3.0.0
-        with:
-          pr_number: ${{ matrix.pull }}
-          evaluations: approved,min_approvals=1,not_draft,ci_passing
-          workflow: pr status (${{ matrix.pull }})
-          pass_labels: 'deploy: ready'
-          fail_labels: 'deploy: needs attention'
-
-      - name: clear stale labels
-        if: ${{ always() && steps.pull.outputs.head != '' }}
-        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71  # v9.0.0
-        env:
-          PULL_REQUEST: ${{ matrix.pull }}
-          EXPECTED_HEAD: ${{ steps.pull.outputs.head }}
-          STATUS_OUTCOME: ${{ steps.status.outcome }}
-        with:
-          script: |
-            const number = Number(process.env.PULL_REQUEST);
-            let pull;
-            try {
-              ({data: pull} = await github.rest.pulls.get({...context.repo, pull_number: number}));
-            } catch (error) {
-              if (error.status === 404) return;
-              throw error;
-            }
-            if (process.env.STATUS_OUTCOME === "success" && pull.state === "open" &&
-                pull.head.sha === process.env.EXPECTED_HEAD &&
-                pull.head.repo?.full_name === context.payload.repository.full_name) return;
-            for (const label of pull.labels) {
-              const name = typeof label === "string" ? label : label.name;
-              if (["deploy: ready", "deploy: needs attention"].includes(name)) {
-                await github.rest.issues.removeLabel({...context.repo, issue_number: number, name});
-              }
-            }
+          mode: branch-deploy
+          transition: ${{ inputs.transition }}
+          pr_number: ${{ inputs.pr_number || 0 }}
+          expected_head_sha: ${{ inputs.expected_head_sha }}
+          operation_result: ${{ inputs.operation_result }}
+          checks: required
+          workflow: ""
+          evaluations: approved,min_approvals=1,not_draft
+          noop_label: needs-noop
