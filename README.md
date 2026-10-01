@@ -2,7 +2,8 @@
 
 [![lint](https://github.com/GrantBirki/branch-deploy-template/actions/workflows/lint.yml/badge.svg)](https://github.com/GrantBirki/branch-deploy-template/actions/workflows/lint.yml)
 [![test](https://github.com/GrantBirki/branch-deploy-template/actions/workflows/test.yml/badge.svg)](https://github.com/GrantBirki/branch-deploy-template/actions/workflows/test.yml)
-[![acceptance](https://github.com/GrantBirki/branch-deploy-template/actions/workflows/acceptance.yml/badge.svg)](https://github.com/GrantBirki/branch-deploy-template/actions/workflows/acceptance.yml)
+[![deploy](https://github.com/GrantBirki/branch-deploy-template/actions/workflows/deploy.yml/badge.svg)](https://github.com/GrantBirki/branch-deploy-template/actions/workflows/deploy.yml)
+[![unlock on merge](https://github.com/GrantBirki/branch-deploy-template/actions/workflows/unlock-on-merge.yml/badge.svg)](https://github.com/GrantBirki/branch-deploy-template/actions/workflows/unlock-on-merge.yml)
 
 A small Terraform starter for trying [Branch Deploy](https://github.com/GrantBirki/branch-deploy) with pull request comments.
 
@@ -50,6 +51,7 @@ This is a disposable demonstration. Candidate Terraform can execute code, includ
 ## Documentation
 
 - [Operations](docs/operations.md): repository setup, commands, locks, labels, and default-branch deployments.
+- [Adapting the template](docs/adapting.md): keeping real infrastructure changes small and reviewable.
 - [Development](docs/development.md): tool versions, local state, and test coverage.
 - [Provider vendoring](docs/provider-vendoring.md): adding an external provider through a reviewed dependency change.
 - [Contributing](AGENTS.md): repository conventions and required checks.

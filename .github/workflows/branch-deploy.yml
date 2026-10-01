@@ -1,4 +1,4 @@
-name: branch deploy
+name: branch-deploy
 
 on:
   issue_comment:
@@ -9,7 +9,7 @@ permissions: {}
 # Cache mode: none. Only validated resource-action summaries reach the reporting job.
 jobs:
   branch-deploy:
-    name: branch deploy
+    name: branch-deploy
     # author_association describes the commenter, not the PR source. Branch Deploy still rejects forks.
     if: >-
       ${{
@@ -38,13 +38,14 @@ jobs:
       sha_deployment: ${{ steps.branch-deploy.outputs.sha_deployment }}
       sha: ${{ steps.branch-deploy.outputs.sha }}
     steps:
-      - name: branch deploy
+      - name: branch-deploy
         id: branch-deploy
         uses: GrantBirki/branch-deploy@9a6ed7fac18108babd7fdc3903d3d8f0a5ad8d66  # v12.1.1
         with:
           sticky_locks: "true"
           admins: "GrantBirki"
           allow_forks: "false"
+          deployment_confirmation: "false"
           commit_verification: true
           environment_targets: production
           skip_completing: true
