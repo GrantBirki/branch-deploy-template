@@ -93,7 +93,7 @@ export function renderSummary(serialized: string, identity: Identity, outcome: s
     renderResourceChangeSummary(classifyResourceChanges(data.resource_changes))}`;
   const display = {
     text: data.resource_changes.map(resource => `${resource.address}: ${resource.change!.actions!.join(", ")}`).join("\n") || "No planned resource changes.",
-    notice: "_Planned resource actions only; see the workflow logs for full output._",
+    notice: "",
   };
   const fitted = fitCommentToGitHubLimit(templatePath, summary, display, identity.mode);
   return renderDeploymentResults(fitted.displayOutput.text, fitted.displayOutput.notice, fitted.summary, identity.mode);
