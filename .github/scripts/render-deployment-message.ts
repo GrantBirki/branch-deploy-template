@@ -122,7 +122,7 @@ export function renderSection(
   const hiddenCount = items.length - shown.length;
   const lines = [`### ${label} (${items.length})`, ""];
 
-  lines.push(...shown.map((item) => `${emoji} \`${item}\``));
+  lines.push(...shown.map((item, index) => `${emoji} \`${item}\`${index < shown.length - 1 ? "  " : ""}`));
 
   if (hiddenCount > 0) {
     lines.push("", `_... and ${hiddenCount} more._`);
@@ -313,7 +313,7 @@ export function renderResourceChangeSummary(
   lines.push(...renderSection("Delete", "🔴", summary.deletes));
 
   if (lines.length === 0) {
-    lines.push("✅ **No planned resource changes.**");
+    lines.push("✅ **Resources: no changes planned.**");
   }
 
   return lines.join("\n").trimEnd();
@@ -392,6 +392,8 @@ export function renderDeploymentResults(
   const details = mode === "plan" ? "Plan" : "Apply";
   const notice = resultsNotice ? `\n\n${resultsNotice}` : "";
 
+  if (!results.trim()) return `${summary}${notice}`;
+
   return `${summary}\n\n<details><summary>${details}</summary>\n\n\`\`\`terraform\n${results}\n\`\`\`${notice}\n\n</details>`;
 }
 
@@ -433,7 +435,7 @@ export function renderTemplateText(
 
   return template.replace(
     resultsPlaceholder,
-    renderDeploymentResults(results, resultsNotice, summary, mode),
+    () => renderDeploymentResults(results, resultsNotice, summary, mode),
   );
 }
 

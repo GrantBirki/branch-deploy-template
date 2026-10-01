@@ -6,6 +6,8 @@ The workflow assumes the default branch is protected. Require the `lint`, `test`
 
 IssueOps runs only after the workflow is on the default branch. Commands are accepted from `OWNER` or `MEMBER` commenters on pull requests.
 
+See [deployment comments](deployment-comments.md) for the layout, evidence requirements, and copyable examples used when adapting the result comment.
+
 ## Commands and locks
 
 `author_association` describes the commenter, not the pull request source. This guard supplements Branch Deploy's explicit fork denial and its permissions, review and exact-SHA checks; add `COLLABORATOR` only when the repository intentionally trusts outside collaborators to request deployments.

@@ -77,7 +77,7 @@ for (const [mode, action] of [['plan', 'noop'], ['apply', 'deploy']]) {
   assert.deepEqual(summary.resource_changes, [{address: 'terraform_data.example', change: {actions: ['create']}}]);
   const message = renderSummary(serialized, identity, 'success');
   assert.ok(message.includes('Create (1)'));
-  assert.ok(message.includes('terraform_data.example: create'));
+  assert.ok(message.includes('Plan: 1 to add, 0 to change, 0 to destroy.'));
 }
 JS
 
