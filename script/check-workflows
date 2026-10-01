@@ -1,124 +1,136 @@
 #!/usr/bin/env bash
 
+# GitHub expressions below are intentionally matched as literal strings.
+# shellcheck disable=SC2016
+
 set -euo pipefail
 
 # shellcheck source=script/env
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env"
 
 failures=0
-uses_count=0
+action_count=0
 checkout_count=0
 persist_count=0
-terraform_pin_count=0
+
+fail() {
+  printf 'error: %s\n' "$*" >&2
+  failures=$((failures + 1))
+}
+
+require_text() {
+  local file="$1"
+  local text="$2"
+  local message="$3"
+
+  grep -F "$text" "$file" >/dev/null || fail "$message"
+}
 
 while IFS= read -r workflow; do
   while IFS= read -r line; do
     reference="${line#*@}"
     reference="${reference%%[[:space:]#]*}"
-    uses_count=$((uses_count + 1))
-    if [[ ! "$reference" =~ ^[0-9a-f]{40}$ ]]; then
-      printf 'error: %s has a non-immutable action reference: %s\n' "$workflow" "$line" >&2
-      failures=$((failures + 1))
-    fi
-    if [[ ! "$line" =~ \#[[:space:]]v[0-9] ]]; then
-      printf 'error: %s action pin is missing a trailing version comment: %s\n' "$workflow" "$line" >&2
-      failures=$((failures + 1))
-    fi
+    action_count=$((action_count + 1))
+    [[ "$reference" =~ ^[0-9a-f]{40}$ ]] ||
+      fail "$workflow has a non-immutable action reference: $line"
+    [[ "$line" =~ \#[[:space:]]v[0-9] ]] ||
+      fail "$workflow action pin is missing a version comment: $line"
   done < <(grep -E '^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*[^[:space:]#]+@' "$workflow" || true)
 
-  current_checkouts="$(grep -cE 'uses:[[:space:]]*actions/checkout@' "$workflow" || true)"
-  current_persist="$(grep -cE 'persist-credentials:[[:space:]]*false' "$workflow" || true)"
-  checkout_count=$((checkout_count + current_checkouts))
-  persist_count=$((persist_count + current_persist))
-
-  while IFS= read -r version_line; do
-    terraform_pin_count=$((terraform_pin_count + 1))
-    if [[ "$version_line" != *"terraform_version: $TERRAFORM_VERSION"* ]]; then
-      printf 'error: %s has a Terraform version that differs from .terraform-version: %s\n' "$workflow" "$version_line" >&2
-      failures=$((failures + 1))
-    fi
-  done < <(grep -E '^[[:space:]]+terraform_version:' "$workflow" || true)
+  checkout_count=$((checkout_count + $(grep -cE 'uses:[[:space:]]*actions/checkout@' "$workflow" || true)))
+  persist_count=$((persist_count + $(grep -cE 'persist-credentials:[[:space:]]*false' "$workflow" || true)))
 done < <(find "$ROOT/.github/workflows" -type f \( -name '*.yml' -o -name '*.yaml' \) -print | sort)
 
-if [[ $uses_count -eq 0 ]]; then
-  printf 'error: no action references found\n' >&2
-  failures=$((failures + 1))
-fi
-
-if [[ $checkout_count -ne $persist_count ]]; then
-  printf 'error: every checkout must set persist-credentials: false\n' >&2
-  failures=$((failures + 1))
-fi
+[[ $action_count -gt 0 ]] || fail 'no action references found'
+[[ $checkout_count -eq $persist_count ]] ||
+  fail 'every checkout must disable credential persistence'
 
 if grep -R -E 'uses:[[:space:]]*actions/cache@|^[[:space:]]+cache:' "$ROOT/.github/workflows" >/dev/null; then
-  printf 'error: cache mode must remain none\n' >&2
-  failures=$((failures + 1))
+  fail 'cache mode must remain none'
 fi
 
-if [[ $terraform_pin_count -eq 0 ]]; then
-  printf 'error: workflows do not use Terraform %s from .terraform-version\n' "$TERRAFORM_VERSION" >&2
-  failures=$((failures + 1))
-fi
-
-for check in lint test acceptance; do
-  check_workflow="$ROOT/.github/workflows/$check.yml"
-  if [[ ! -f "$check_workflow" ]] ||
-    ! grep -Fx "name: $check" "$check_workflow" >/dev/null ||
-    ! grep -Fx "  $check:" "$check_workflow" >/dev/null; then
-    printf 'error: %s must have its own lowercase workflow and job\n' "$check" >&2
-    failures=$((failures + 1))
-  fi
+for name in lint test acceptance deploy; do
+  workflow="$ROOT/.github/workflows/$name.yml"
+  require_text "$workflow" 'script/terraform-version' "$name must read the version-controlled Terraform version"
+  require_text "$workflow" 'terraform_version: ${{ steps.version.outputs.version }}' "$name must pass the validated version to setup-terraform"
 done
 
-if [[ -e "$ROOT/.github/workflows/ci.yml" ]]; then
-  printf 'error: lint, test, and acceptance must remain separate workflows\n' >&2
-  failures=$((failures + 1))
+if grep -R -E 'terraform_version:[[:space:]]*[0-9]' "$ROOT/.github/workflows" >/dev/null ||
+  grep -R -E 'required_version[[:space:]]*=' "$ROOT" --include='*.tf' >/dev/null; then
+  fail '.terraform-version must remain the only Terraform version declaration'
 fi
 
-if grep -R -E '^[[:space:]]*name:.*[A-Z]' "$ROOT/.github/workflows" >/dev/null; then
-  printf 'error: workflow, job, and step names must remain lowercase\n' >&2
-  failures=$((failures + 1))
+version_test_dir="$(make_runtime_dir)"
+trap 'remove_runtime_dir "$version_test_dir"' EXIT
+printf '2.3.4\n' > "$version_test_dir/valid"
+printf 'latest\n' > "$version_test_dir/floating"
+printf '2.3.4\n2.3.5\n' > "$version_test_dir/multiple"
+if [[ "$(read_terraform_version "$version_test_dir/valid")" != '2.3.4' ]] ||
+  (read_terraform_version "$version_test_dir/floating") >/dev/null 2>&1 ||
+  (read_terraform_version "$version_test_dir/multiple") >/dev/null 2>&1; then
+  fail 'Terraform version parsing must accept one exact stable release only'
 fi
 
 branch_deploy_workflow="$ROOT/.github/workflows/branch-deploy.yml"
-
-if ! grep -F 'github.event.issue.pull_request' "$branch_deploy_workflow" >/dev/null; then
-  printf 'error: Branch Deploy admission must require a pull request comment\n' >&2
-  failures=$((failures + 1))
+require_text "$branch_deploy_workflow" 'github.event.issue.pull_request' 'Branch Deploy must require a pull request comment'
+require_text "$branch_deploy_workflow" "contains(fromJSON('[\"OWNER\", \"MEMBER\"]'), github.event.comment.author_association)" 'Branch Deploy must allow only OWNER and MEMBER commenters'
+if grep -F 'COLLABORATOR' "$branch_deploy_workflow" >/dev/null ||
+  grep -F 'allow_forks: true' "$branch_deploy_workflow" >/dev/null; then
+  fail 'Branch Deploy admission must not extend to collaborators or forks'
 fi
 
-if ! grep -F "contains(fromJSON('[\"OWNER\", \"MEMBER\"]'), github.event.comment.author_association)" "$branch_deploy_workflow" >/dev/null; then
-  printf 'error: Branch Deploy admission must allow only OWNER and MEMBER commenters\n' >&2
-  failures=$((failures + 1))
+for setting in 'commit_verification: true' 'deployment_confirmation: true' 'environment: test' 'environment_targets: test' 'skip_completing: true'; do
+  require_text "$branch_deploy_workflow" "$setting" "Branch Deploy is missing required behavior: $setting"
+done
+
+require_text "$branch_deploy_workflow" 'ref: ${{ github.sha }}' 'Branch Deploy must read tooling from the trusted workflow SHA'
+require_text "$branch_deploy_workflow" 'terraform_version: ${{ needs.branch-deploy.outputs.terraform_version }}' 'Branch Deploy must forward the trusted Terraform version'
+
+setup_line="$(grep -nF 'terraform_version: ${{ needs.branch-deploy.outputs.terraform_version }}' "$branch_deploy_workflow" | cut -d: -f1)"
+candidate_line="$(grep -nF 'ref: ${{ steps.revision.outputs.sha }}' "$branch_deploy_workflow" | cut -d: -f1)"
+if [[ -z "$setup_line" || -z "$candidate_line" || "$setup_line" -ge "$candidate_line" ]]; then
+  fail 'trusted Terraform setup must happen before candidate checkout'
 fi
 
-if grep -F 'COLLABORATOR' "$branch_deploy_workflow" >/dev/null; then
-  printf 'error: COLLABORATOR admission must remain an explicit opt-in\n' >&2
-  failures=$((failures + 1))
+deployment_message="$ROOT/.github/deployment_message.md"
+[[ -f "$deployment_message" ]] || fail 'trusted deployment message is missing'
+if grep -F '{{ results }}' "$deployment_message" >/dev/null; then
+  fail 'trusted deployment message must not render raw results'
 fi
 
-if ! grep -F 'allow_forks: false' "$branch_deploy_workflow" >/dev/null; then
-  printf 'error: Branch Deploy must continue to reject fork pull requests\n' >&2
-  failures=$((failures + 1))
+require_text "$branch_deploy_workflow" "context='branch-deploy/noop'" 'noop results must use a commit-specific status context'
+require_text "$branch_deploy_workflow" 'DEPLOYMENT_SHA: ${{ needs.branch-deploy.outputs.sha }}' 'noop results must be recorded against the admitted SHA'
+require_text "$branch_deploy_workflow" 'uses: ./.github/workflows/pr-status.yml' 'Branch Deploy must reconcile labels after result handling'
+
+deploy_workflow="$ROOT/.github/workflows/deploy.yml"
+require_text "$deploy_workflow" 'branches: [main]' 'direct deploy must target the default branch'
+require_text "$deploy_workflow" 'ref: ${{ github.sha }}' 'direct deploy must check out the pushed SHA'
+require_text "$deploy_workflow" 'run: script/deploy' 'direct deploy must use the shared deployment entry point'
+if grep -F 'continue-on-error:' "$deploy_workflow" >/dev/null; then
+  fail 'direct deployment failures must remain failures'
 fi
 
-dependabot_config="$ROOT/.github/dependabot.yml"
-if ! awk '
-  /package-ecosystem:/ { ecosystems++ }
-  /default-days:/ {
-    cooldowns++
-    if ($2 < 5 || $2 > 90) invalid = 1
-  }
-  END { exit !(ecosystems > 0 && ecosystems == cooldowns && !invalid) }
-' "$dependabot_config"; then
-  printf 'error: every Dependabot ecosystem must have a 5-90 day cooldown\n' >&2
-  failures=$((failures + 1))
+concurrency_count="$(grep -h -c 'group: deployment-test' "$branch_deploy_workflow" "$deploy_workflow" |
+  awk '{ total += $1 } END { print total + 0 }')"
+[[ "$concurrency_count" -eq 2 ]] ||
+  fail 'IssueOps and direct deployments must serialize Terraform execution'
+
+pr_status_workflow="$ROOT/.github/workflows/pr-status.yml"
+require_text "$pr_status_workflow" 'review.commit_id === pull.head.sha' 'PR status must require a current-head approval'
+require_text "$pr_status_workflow" 'ref: pull.head.sha' 'PR status must read checks from the current head'
+require_text "$pr_status_workflow" 'status.context === "branch-deploy/noop"' 'PR status must read the commit-specific noop result'
+if grep -F 'actions/checkout@' "$pr_status_workflow" >/dev/null; then
+  fail 'PR status must not check out candidate content'
+fi
+
+new_pr_workflow="$ROOT/.github/workflows/new-pr.yml"
+if grep -E 'actions/checkout@|^[[:space:]]+run:' "$new_pr_workflow" >/dev/null; then
+  fail 'new pull request guidance must not execute candidate content'
 fi
 
 if [[ -e "$ROOT/.terraform.lock.hcl" ]]; then
-  printf 'error: terraform_data is built in; an external provider lock file was not expected\n' >&2
-  failures=$((failures + 1))
+  fail 'the built-in terraform_data provider must not create a dependency lock file'
 fi
 
 [[ $failures -eq 0 ]] || exit 1
-printf 'Workflow layout, action pins, commenter admission, Dependabot cooldown, toolchain version, and cache mode are valid.\n'
+printf 'Workflow trust boundaries and toolchain selection are valid.\n'

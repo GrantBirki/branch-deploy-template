@@ -17,15 +17,17 @@ script/acceptance
 
 The same scripts run locally and in GitHub Actions. There is no package manager, custom provider, remote module, or external Terraform provider to install.
 
+`.terraform-version` is the single source of truth for the exact Terraform release. `tfenv` reads it directly, and the workflows pass the same validated value to `setup-terraform`.
+
 ## IssueOps flow
 
-After this workflow is present on the default branch, open a pull request and wait for CI to pass. The trusted `admit` job accepts commands only from commenters whose author association is `OWNER` or `MEMBER`:
+After this workflow is present on the default branch, open a pull request and wait for CI to pass. The trusted `branch-deploy` job accepts commands only from commenters whose author association is `OWNER` or `MEMBER`:
 
 ```text
 .noop test
 ```
 
-`author_association` describes the commenter, not the pull request source. This guard supplements `allow_forks: false` and Branch Deploy's permissions, review, confirmation, and exact-SHA checks; add `COLLABORATOR` only when the repository intentionally trusts outside collaborators to request deployments.
+`author_association` describes the commenter, not the pull request source. This guard supplements Branch Deploy's pinned fork-denial default and its permissions, review, confirmation, and exact-SHA checks; add `COLLABORATOR` only when the repository intentionally trusts outside collaborators to request deployments.
 
 The noop path checks out the exact commit approved by Branch Deploy and runs `terraform init`, `terraform validate`, and `terraform plan`. A noop still executes candidate Terraform and repository scripts. It is not a trusted or read-only inspection.
 
@@ -39,15 +41,43 @@ Both commands require a confirmation reaction. The workflow admits commands in a
 
 Result mode keeps the original lock when execution is cancelled. A force-cancelled run, lost runner, or result job that never starts can leave completion unfinished. Use `.wcid` to inspect the current lock before deciding whether a manual `.unlock test` is appropriate.
 
+The [unlock on merge workflow](.github/workflows/unlock-on-merge.yml) asks Branch Deploy to release locks created by a pull request after GitHub reports that pull request merged. It uses the same `test` environment target and does not check out or run candidate content. The pinned action's compare-and-delete protection leaves a lock alone if another operation replaced it during cleanup.
+
+## Pull request status
+
+Create these repository labels before enabling the metadata workflows:
+
+- `deploy: noop`
+- `deploy: needs review`
+- `deploy: needs checks`
+- `deploy: needs noop`
+- `deploy: ready`
+
+The `new pull request` workflow leaves concise deployment instructions. The `pr status` workflow then reconciles the labels from trusted GitHub metadata without checking out or running pull request content. A ready label requires successful `lint`, `test`, and `acceptance` checks, an approval submitted for the current head SHA, and a successful noop status recorded for that same SHA.
+
+These labels are informational. Branch Deploy remains the authorization gate and independently enforces actor permissions, reviews, checks, confirmation, fork denial, and exact-SHA selection.
+
+## Default-branch deploy
+
+The [deploy workflow](.github/workflows/deploy.yml) runs `script/deploy` for every push to `main`, including a merged pull request. It checks out and verifies the exact pushed commit, reads Terraform from that trusted revision, and preserves deployment failures as workflow failures.
+
+GitHub does not allow an expression in a push branch filter. If the repository's default branch is renamed, update the literal `main` branch in `deploy.yml` and set Branch Deploy's `stable_branch` input during the same change.
+
+The direct and IssueOps paths share a job-level concurrency group. Only Terraform execution is serialized: the direct path does not create, release, or modify Branch Deploy locks.
+
 ## Trust model
 
 The [Branch Deploy workflow](.github/workflows/branch-deploy.yml) keeps three boundaries explicit:
 
-1. `admit` accepts only pull request comments from owners or organization members, then runs the full-SHA-pinned Branch Deploy action from the default-branch workflow. It checks the command, reviews, CI, actor permissions, confirmation, and lock without checking out pull request content.
-2. `terraform` validates the admitted SHA, checks out that exact commit with credential persistence disabled, verifies `HEAD`, and runs the candidate scripts with only `contents: read`. It receives no deployment secrets or environment credentials.
-3. `complete` forwards the unchanged trusted context and job results to Branch Deploy result mode. Result mode reports the real outcome and handles only the original eligible lock.
+1. `branch-deploy` accepts only pull request comments from owners or organization members. It reads the Terraform version from the exact default-branch revision, then runs the full-SHA-pinned Branch Deploy action to check the command, reviews, CI, actor permissions, confirmation, and lock without checking out pull request content.
+2. `terraform` installs that trusted Terraform version, validates the admitted SHA, checks out that exact candidate commit with credential persistence disabled, verifies `HEAD`, and runs the candidate scripts with only `contents: read`. It receives no deployment secrets or environment credentials.
+3. `status` forwards the unchanged trusted context and job results to Branch Deploy result mode. Result mode reports the real outcome and handles only the original eligible lock.
+
+Pull request CI reads the candidate `.terraform-version` in an unprivileged job. IssueOps does not: a version change must merge before a deployment can use it. Until then, the candidate version check fails instead of installing PR-selected tooling.
 
 The execution job intentionally has no artifact or cache handoff from candidate code into a privileged job. Cache mode is `none`: the workflows use neither the Actions cache nor a Terraform plugin cache.
+
+Branch Deploy fetches [the deployment message](.github/deployment_message.md) from the exact trusted workflow revision. The template uses only escaped metadata and deliberately omits raw deployment results.
 
 GitHub still provides its normal runner and Actions runtime context to jobs. This example limits repository permissions and credentials, but it is not a sandbox for hostile code.
 
@@ -61,7 +91,7 @@ GitHub still provides its normal runner and Actions runtime context to jobs. Thi
 
 Nothing persists between jobs or workflow runs. This is deliberate. The example does not pretend that local state can coordinate real infrastructure across ephemeral runners.
 
-`terraform_data` is a built-in resource, so it demonstrates Terraform's real plan, apply, state, output, and destroy behavior without provider credentials, provider downloads, or a dependency lock file. If an external provider is added, commit and validate `.terraform.lock.hcl` with that change.
+`terraform_data` is a built-in resource, so it demonstrates Terraform's real plan, apply, state, output, and destroy behavior without provider credentials, provider downloads, or a dependency lock file. If an external provider is added, follow the [provider vendoring guide](docs/provider-vendoring.md) and commit its lock and mirror as one reviewed dependency change.
 
 ## Tests
 

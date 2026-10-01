@@ -3,14 +3,29 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-TERRAFORM_VERSION="$(tr -d '[:space:]' < "$ROOT/.terraform-version")"
-
-export ROOT TERRAFORM_VERSION
 
 die() {
   printf 'error: %s\n' "$*" >&2
   exit 1
 }
+
+read_terraform_version() {
+  local version_file="$1"
+  local line_count
+  local version
+
+  [[ -f "$version_file" ]] || die "missing Terraform version file: $version_file"
+  line_count="$(grep -c '^' "$version_file" || true)"
+  [[ "$line_count" -eq 1 ]] || die "Terraform version file must contain exactly one line"
+  version="$(sed -n '1p' "$version_file")"
+  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Terraform version must be an exact stable release"
+
+  printf '%s\n' "$version"
+}
+
+TERRAFORM_VERSION="$(read_terraform_version "$ROOT/.terraform-version")"
+
+export ROOT TERRAFORM_VERSION
 
 require_terraform() {
   command -v terraform >/dev/null 2>&1 || die "Terraform ${TERRAFORM_VERSION} is required"

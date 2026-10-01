@@ -1,24 +1,35 @@
 ---
-name: test
+name: deploy
 
 on:
-  pull_request:
   push:
     branches: [main]
 
 permissions:
   contents: read
 
-# Cache mode: none. This job uses neither Actions cache nor Terraform plugin cache.
+# Cache mode: none. The local state lifecycle is isolated to this job.
 jobs:
-  test:
-    name: test
+  deploy:
+    name: deploy
     runs-on: ubuntu-latest
+    concurrency:
+      group: deployment-test
+      cancel-in-progress: false
     steps:
       - name: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
+
+      - name: verify checkout
+        env:
+          DEPLOYMENT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$DEPLOYMENT_SHA" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]
+          [[ "$(git rev-parse HEAD)" == "$DEPLOYMENT_SHA" ]]
 
       - name: terraform version
         id: version
@@ -30,8 +41,7 @@ jobs:
           terraform_version: ${{ steps.version.outputs.version }}
           terraform_wrapper: false
 
-      - name: bootstrap
-        run: script/bootstrap
-
-      - name: test
-        run: script/test
+      - name: deploy
+        env:
+          DEPLOYMENT_SHA: ${{ github.sha }}
+        run: script/deploy

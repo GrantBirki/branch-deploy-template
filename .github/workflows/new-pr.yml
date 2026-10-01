@@ -1,0 +1,33 @@
+---
+name: new pull request
+
+on:
+  pull_request_target:  # zizmor: ignore[dangerous-triggers] trusted metadata only; no candidate checkout or execution
+    branches: [main]
+    types: [opened]
+
+permissions: {}
+
+jobs:
+  new-pr:
+    name: new pull request
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: deployment instructions
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71  # v9.0.0
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: [
+                "### branch deploy",
+                "",
+                "Run `.noop test` after CI passes. Once the exact commit has a successful noop and current approval, the status labels will show that it is ready.",
+                "",
+                "Run `.deploy test` only when you intend to exercise the disposable local-state apply flow. Labels summarize state; Branch Deploy still enforces authorization, reviews, checks, confirmation, fork denial, and the exact commit."
+              ].join("\n")
+            });
