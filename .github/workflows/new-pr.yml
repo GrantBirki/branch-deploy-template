@@ -1,0 +1,48 @@
+name: new pull request
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened]
+
+permissions:
+  contents: read
+
+jobs:
+  new-pr:
+    permissions:
+      contents: read
+      pull-requests: write
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: fence
+        uses: openai/fence@6ddc6df2e7dd8826022809a8143573247fb3b486 # pin@v0.10.3
+        with:
+          mode: audit
+
+      - name: checkout
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8 # pin@v6
+        with:
+          persist-credentials: false
+
+      - name: comment with deployment instructions
+        uses: GrantBirki/comment@608e41b19bc973020ec0e189ebfdae935d7fe0cc # pin@v2.1.1
+        continue-on-error: true
+        with:
+          body: |
+            ### 👋 Thanks for opening a pull request!
+
+            If you are new, please read the deployment instructions below to learn how to ship your changes to production:
+
+            1. 🧪 Run a noop deployment with `.noop` as a comment on this PR
+            1. 👀 Observe the CI and `noop` output on this pull request to ensure it is passing and doing what it is supposed to do
+            1. ✔️ Obtain an approval/review on this pull request
+            1. 🚀 Branch deploy your pull request to production with `.deploy`
+
+                &gt; If anything goes wrong, rollback with `.deploy main`
+
+            1. 🎉 Merge!
+
+            If you need additional help, please view the [usage guide](https://github.com/grantbirki/branch-deploy/blob/main/docs/usage.md).

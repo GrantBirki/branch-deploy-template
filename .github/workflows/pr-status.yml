@@ -1,0 +1,54 @@
+name: pr-status
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
+  pull_request_review:
+    types: [submitted, dismissed]
+  workflow_call:
+    inputs:
+      transition:
+        type: string
+        default: ""
+      pr_number:
+        type: number
+        default: 0
+      expected_head_sha:
+        type: string
+        default: ""
+      operation_result:
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  checks: read
+  statuses: read
+  pull-requests: write
+
+jobs:
+  branch-deploy-status:
+    name: branch-deploy-status
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: branch-deploy-status-${{ github.repository }}-${{ github.event.pull_request.number || inputs.pr_number || github.event.issue.number || github.run_id }}
+      queue: max
+    steps:
+      - name: fence
+        uses: openai/fence@6ddc6df2e7dd8826022809a8143573247fb3b486 # pin@v0.10.3
+        with:
+          mode: audit
+
+      - name: reconcile branch-deploy state
+        uses: GrantBirki/pr-status@c5f7a6585b4a86b0bd618c4bac9f5197318c8d6b # pin@main
+        with:
+          mode: branch-deploy
+          transition: ${{ inputs.transition }}
+          pr_number: ${{ inputs.pr_number || 0 }}
+          expected_head_sha: ${{ inputs.expected_head_sha }}
+          operation_result: ${{ inputs.operation_result }}
+          checks: required
+          workflow: ""
+          evaluations: approved,min_approvals=1,not_draft
+          noop_label: needs-noop

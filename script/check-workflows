@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# shellcheck source=script/env
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env"
+
+failures=0
+action_count=0
+checkout_count=0
+persist_count=0
+
+fail() {
+  printf 'error: %s\n' "$*" >&2
+  failures=$((failures + 1))
+}
+
+while IFS= read -r workflow; do
+  while IFS= read -r line; do
+    reference="${line#*@}"
+    reference="${reference%%[[:space:]#]*}"
+    action_count=$((action_count + 1))
+    [[ "$reference" =~ ^[0-9a-f]{40}$ ]] ||
+      fail "$workflow has a non-immutable action reference: $line"
+  done < <(grep -E '^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*[^[:space:]#]+@' "$workflow" || true)
+
+  checkout_count=$((checkout_count + $(grep -cE 'uses:[[:space:]]*actions/checkout@' "$workflow" || true)))
+  persist_count=$((persist_count + $(grep -cE 'persist-credentials:[[:space:]]*false' "$workflow" || true)))
+done < <(find "$ROOT/.github/workflows" -type f \( -name '*.yml' -o -name '*.yaml' \) -print | sort)
+
+[[ $action_count -gt 0 ]] || fail 'no action references found'
+[[ $checkout_count -eq $persist_count ]] ||
+  fail 'every checkout must disable credential persistence'
+
+if grep -R -E 'uses:[[:space:]]*actions/cache@|^[[:space:]]+cache:' "$ROOT/.github/workflows" >/dev/null; then
+  fail 'cache mode must remain none'
+fi
+
+if grep -R -E 'terraform_version:[[:space:]]*[0-9]' "$ROOT/.github/workflows" >/dev/null ||
+  grep -R -E 'required_version[[:space:]]*=' "$ROOT" --include='*.tf' >/dev/null; then
+  fail '.terraform-version must remain the only Terraform version declaration'
+fi
+
+[[ $failures -eq 0 ]] || exit 1
+printf 'Workflow pins, checkout credentials, cache policy, and toolchain selection are valid.\n'

@@ -1,0 +1,21 @@
+name: unlock on merge
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions: {}
+
+jobs:
+  unlock-on-merge:
+    name: unlock on merge
+    if: ${{ github.event.pull_request.merged == true }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: unlock on merge
+        uses: GrantBirki/branch-deploy@9a6ed7fac18108babd7fdc3903d3d8f0a5ad8d66  # v12.1.1
+        with:
+          environment_targets: production
+          unlock_on_merge_mode: true

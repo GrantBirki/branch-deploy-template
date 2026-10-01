@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# shellcheck source=script/env
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env"
+require_terraform
+
+runtime_dir="$(make_runtime_dir)"
+trap 'remove_runtime_dir "$runtime_dir"' EXIT
+export TF_DATA_DIR="$runtime_dir/terraform-data"
+
+terraform -chdir="$ROOT" init -backend=false -input=false -no-color
+terraform -chdir="$ROOT" test -no-color
+
+node --test "$ROOT"/tests/*.test.ts
