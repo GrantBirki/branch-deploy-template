@@ -88,7 +88,7 @@ Pull request CI reads the candidate `.terraform-version` in an unprivileged job.
 
 The execution job intentionally has no artifact or cache handoff from candidate code into a privileged job. Cache mode is `none`: the workflows use neither the Actions cache nor a Terraform plugin cache.
 
-Branch Deploy fetches [the deployment message](.github/deployment_message.md) from the exact trusted workflow revision. The template uses only escaped metadata and deliberately omits raw deployment results.
+Branch Deploy fetches [the deployment message](.github/deployment_message.md) from the exact trusted workflow revision. Its built-in renderer handles the conditional Markdown without executing template code. Metadata is escaped, and `results` contains only the Terraform job result supplied by GitHub. Raw Terraform output stays in the workflow logs; it is never passed to the privileged result job.
 
 GitHub still provides its normal runner and Actions runtime context to jobs. This example limits repository permissions and credentials, but it is not a sandbox for hostile code.
 

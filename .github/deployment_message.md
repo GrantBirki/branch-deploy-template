@@ -1,7 +1,12 @@
-### deployment result: {{ status }}
+### Deployment Results {{ ":white_check_mark:" if status === "success" else ":x:" }}
 
-**{{ actor }}** ran {{ "a noop for" if noop else "a deploy for" }} `{{ ref }}` in **{{ environment }}**.
+{% if status === "success" %} **{{ actor }}** successfully **{{ "noop" if noop else "branch" }}** deployed branch `{{ ref }}` to **{{ environment }}**{% endif %}
 
-- commit: `{{ sha }}`
-- finished: {{ deployment_end_time }}
-- [workflow logs]({{ logs }})
+{% if status === "failure" %} **{{ actor }}** your **{{ "noop" if noop else "branch" }}** deployment of `{{ ref }}` failed to deploy to the **{{ environment }}** environment{% endif %}
+
+{% if status === "unknown" %} **{{ actor }}** your **{{ "noop" if noop else "branch" }}** deployment of `{{ ref }}` is in an unknown state when trying to deploy to the **{{ environment }}** environment.{% endif %}
+
+- **Logs:** [workflow run]({{ logs }}) 🔗
+- **Completed:** `{{ deployment_end_time }}` 📆
+
+{{ results }}
