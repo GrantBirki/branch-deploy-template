@@ -2,6 +2,8 @@
 
 This template needs no provider mirror or dependency lock file. `terraform_data` is built into Terraform, so adding an empty `vendor/` directory or lock file now would be ceremony without a dependency to protect.
 
+The template currently initializes with an empty provider directory, disables module installation, and rejects provider lock files. Change those trusted controls deliberately when introducing a reviewed provider mirror.
+
 If you adapt the template to use an external provider, make provider installation an explicit, reviewed supply-chain change. A practical flow is:
 
 1. Declare the provider source and an exact version in `required_providers`.

@@ -12,11 +12,15 @@ mkdir -p "$acceptance_dir/runtime" "$acceptance_dir/logs"
 
 revision="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-TF_WORKSPACE=acceptance RUNNER_TEMP="$acceptance_dir/runtime" DEPLOYMENT_SHA="$revision" "$ROOT/script/noop" \
+CAPTURE_TERRAFORM_SUMMARY=true GITHUB_RUN_ID=123 GITHUB_RUN_ATTEMPT=1 \
+  GITHUB_OUTPUT="$acceptance_dir/noop-summary" \
+  TF_WORKSPACE=acceptance RUNNER_TEMP="$acceptance_dir/runtime" DEPLOYMENT_SHA="$revision" "$ROOT/script/noop" \
   >"$acceptance_dir/logs/noop.log" 2>&1
 grep -F "Noop completed for revision $revision; no state was applied." "$acceptance_dir/logs/noop.log" >/dev/null
 
-TF_WORKSPACE=acceptance RUNNER_TEMP="$acceptance_dir/runtime" DEPLOYMENT_SHA="$revision" "$ROOT/script/deploy" \
+CAPTURE_TERRAFORM_SUMMARY=true GITHUB_RUN_ID=123 GITHUB_RUN_ATTEMPT=1 \
+  GITHUB_OUTPUT="$acceptance_dir/deploy-summary" \
+  TF_WORKSPACE=acceptance RUNNER_TEMP="$acceptance_dir/runtime" DEPLOYMENT_SHA="$revision" "$ROOT/script/deploy" \
   >"$acceptance_dir/logs/deploy.log" 2>&1
 grep -F "Applied and verified local state at revision $revision; cleanup is still pending." "$acceptance_dir/logs/deploy.log" >/dev/null
 grep -F 'Deployment demonstration completed; local Terraform state destroyed.' "$acceptance_dir/logs/deploy.log" >/dev/null
@@ -24,6 +28,58 @@ grep -F 'Deployment demonstration completed; local Terraform state destroyed.' "
 if find "$acceptance_dir/runtime" -mindepth 1 -print -quit | grep -q .; then
   die "noop or deploy left temporary state behind"
 fi
+
+# Candidate helper files must never replace the trusted entry points.
+mkdir -p "$acceptance_dir/source/script" "$acceptance_dir/source/.github/scripts"
+cp "$ROOT/backend.tf" "$ROOT/.terraform-version" "$ROOT/.node-version" "$acceptance_dir/source/"
+sed 's/branch-deploy-template/candidate-fixture/g' "$ROOT/main.tf" > "$acceptance_dir/source/main.tf"
+printf 'exit 99\n' > "$acceptance_dir/source/script/terraform"
+printf 'throw new Error("candidate helper executed");\n' > "$acceptance_dir/source/.github/scripts/tool-versions.ts"
+TERRAFORM_ROOT="$acceptance_dir/source" RUNNER_TEMP="$acceptance_dir/runtime" \
+  DEPLOYMENT_SHA="$revision" "$ROOT/script/noop" > "$acceptance_dir/logs/trusted-helper.log" 2>&1
+grep -F 'candidate-fixture' "$acceptance_dir/logs/trusted-helper.log" >/dev/null
+
+# Terraform must fail before using alternate backends or downloading dependencies.
+for scenario in backend provider module; do
+  case "$scenario" in
+    backend) printf 'terraform {\n  backend "http" {}\n}\n' > "$acceptance_dir/source/rejected.tf" ;;
+    provider) printf 'terraform {\n  required_providers {\n    null = {\n      source = "hashicorp/null"\n    }\n  }\n}\n' > "$acceptance_dir/source/rejected.tf" ;;
+    module) printf 'module "remote" { source = "git::https://example.invalid/module.git" }\n' > "$acceptance_dir/source/rejected.tf" ;;
+  esac
+  if TERRAFORM_ROOT="$acceptance_dir/source" RUNNER_TEMP="$acceptance_dir/runtime" \
+    DEPLOYMENT_SHA="$revision" "$ROOT/script/noop" > "$acceptance_dir/logs/$scenario.log" 2>&1; then
+    die "unexpectedly allowed an alternate backend or external dependency: $scenario"
+  fi
+  case "$scenario" in
+    backend) expected="Duplicate 'backend' configuration block" ;;
+    provider) expected='in any of the search locations' ;;
+    module) expected='Module not installed' ;;
+  esac
+  if ! grep -F "$expected" "$acceptance_dir/logs/$scenario.log" >/dev/null; then
+    cat "$acceptance_dir/logs/$scenario.log" >&2
+    die "unexpected rejection reason: $scenario"
+  fi
+  rm "$acceptance_dir/source/rejected.tf"
+done
+
+node --input-type=module - "$acceptance_dir" <<'JS'
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {pathToFileURL} from 'node:url';
+import {resolve} from 'node:path';
+const {validateSummary, renderSummary} = await import(pathToFileURL(resolve(process.env.ROOT, '.github/scripts/deployment-summary.ts')));
+for (const [mode, action] of [['plan', 'noop'], ['apply', 'deploy']]) {
+  const line = readFileSync(resolve(process.argv[2], `${action}-summary`), 'utf8').split('\n').find(line => line.startsWith('summary='));
+  assert.ok(line, 'real Terraform must produce a structured summary');
+  const serialized = line.slice('summary='.length);
+  const identity = {sha: 'a'.repeat(40), run: '123', attempt: '1', mode};
+  const summary = validateSummary(serialized, identity);
+  assert.deepEqual(summary.resource_changes, [{address: 'terraform_data.example', change: {actions: ['create']}}]);
+  const message = renderSummary(serialized, identity, 'success');
+  assert.ok(message.includes('Create (1)'));
+  assert.ok(message.includes('terraform_data.example: create'));
+}
+JS
 
 set +e
 PATH="$ROOT/test/fixtures:$PATH" \
@@ -55,4 +111,4 @@ if find "$acceptance_dir/runtime" -mindepth 1 -print -quit | grep -q .; then
   die "failure cleanup left temporary state behind"
 fi
 
-printf 'Noop, deploy, local-state cleanup, and failure-result acceptance checks passed.\n'
+printf 'Noop, deploy, trusted tooling, summaries, cleanup, and failure-result acceptance checks passed.\n'

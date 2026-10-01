@@ -6,7 +6,7 @@ on:
 
 permissions: {}
 
-# Cache mode: none. Candidate content is never passed to a privileged job through a cache or artifact.
+# Cache mode: none. Only validated resource-action summaries reach the reporting job.
 jobs:
   branch-deploy:
     name: branch deploy
@@ -37,35 +37,22 @@ jobs:
       ref: ${{ steps.branch-deploy.outputs.ref }}
       sha_deployment: ${{ steps.branch-deploy.outputs.sha_deployment }}
       sha: ${{ steps.branch-deploy.outputs.sha }}
-      terraform_version: ${{ steps.version.outputs.version }}
     steps:
-      - name: checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-
-      - name: terraform version
-        id: version
-        env:
-          TRUSTED_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          [[ "$(git rev-parse HEAD)" == "$TRUSTED_SHA" ]] || exit 1
-          version="$(script/terraform-version)"
-          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
-
       - name: branch deploy
         id: branch-deploy
         uses: GrantBirki/branch-deploy@9a6ed7fac18108babd7fdc3903d3d8f0a5ad8d66  # v12.1.1
         with:
+          sticky_locks: "true"
+          admins: "GrantBirki"
+          allow_forks: "false"
           commit_verification: true
-          deployment_confirmation: true
           environment_targets: production
           skip_completing: true
 
   terraform:
     name: terraform
+    outputs:
+      summary: ${{ needs.branch-deploy.outputs.noop == 'true' && steps.plan.outputs.summary || steps.apply.outputs.summary }}
     needs: branch-deploy
     if: >-
       ${{
@@ -80,52 +67,119 @@ jobs:
         id: revision
         env:
           ADMITTED_SHA: ${{ needs.branch-deploy.outputs.sha }}
+          NOOP: ${{ needs.branch-deploy.outputs.noop }}
         run: |
           set -euo pipefail
           if [[ ! "$ADMITTED_SHA" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
             echo "Branch Deploy did not return an exact Git SHA" >&2
             exit 1
           fi
+          [[ "$NOOP" == "true" || "$NOOP" == "false" ]] || exit 1
           printf 'sha=%s\n' "$ADMITTED_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: setup terraform
-        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
+      - name: checkout tooling
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
-          terraform_version: ${{ needs.branch-deploy.outputs.terraform_version }}
-          terraform_wrapper: false
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          path: trusted
 
-      - name: checkout
+      - name: checkout candidate
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ steps.revision.outputs.sha }}
+          path: source
+
+      - name: verify checkouts
+        env:
+          ADMITTED_SHA: ${{ steps.revision.outputs.sha }}
+          TRUSTED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ -d trusted && ! -L trusted && -d source && ! -L source ]]
+          [[ "$(git -C trusted rev-parse HEAD)" == "$TRUSTED_SHA" ]]
+          [[ "$(git -C source rev-parse HEAD)" == "$ADMITTED_SHA" ]]
+
+      - name: setup node
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238  # v6.2.0
+        with:
+          node-version-file: trusted/.node-version
+          package-manager-cache: false
+
+      - name: terraform version
+        id: version
+        run: trusted/script/terraform-version
+
+      - name: setup terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
+        with:
+          terraform_version: ${{ steps.version.outputs.version }}
+          terraform_wrapper: false
+
+      - name: terraform plan
+        id: plan
+        if: ${{ needs.branch-deploy.outputs.noop == 'true' }}
+        env:
+          CAPTURE_TERRAFORM_SUMMARY: true
+          TERRAFORM_ROOT: ${{ github.workspace }}/source
+          DEPLOYMENT_SHA: ${{ steps.revision.outputs.sha }}
+        run: trusted/script/noop
+
+      - name: terraform apply
+        id: apply
+        if: ${{ needs.branch-deploy.outputs.noop == 'false' }}
+        env:
+          CAPTURE_TERRAFORM_SUMMARY: true
+          TERRAFORM_ROOT: ${{ github.workspace }}/source
+          DEPLOYMENT_SHA: ${{ steps.revision.outputs.sha }}
+        run: trusted/script/deploy
+
+  render:
+    name: render
+    needs: [branch-deploy, terraform]
+    if: >-
+      ${{
+        always() && needs.branch-deploy.outputs.continue == 'true' &&
+        fromJSON(needs.branch-deploy.outputs.context).run_attempt == github.run_attempt
+      }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      message: ${{ steps.render.outputs.DEPLOY_MESSAGE }}
+    steps:
+      - name: checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
 
       - name: verify checkout
         env:
-          ADMITTED_SHA: ${{ steps.revision.outputs.sha }}
+          TRUSTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
-          actual_sha="$(git rev-parse HEAD)"
-          if [[ "$actual_sha" != "$ADMITTED_SHA" ]]; then
-            echo "checked out $actual_sha instead of $ADMITTED_SHA" >&2
-            exit 1
-          fi
+          [[ "$(git rev-parse HEAD)" == "$TRUSTED_SHA" ]]
 
-      - name: run terraform
+      - name: setup node
+        uses: actions/setup-node@6044e13b5dc448c55e2357c09f80417699197238  # v6.2.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+
+      - name: render message
+        id: render
         env:
-          DEPLOYMENT_SHA: ${{ steps.revision.outputs.sha }}
-          NOOP: ${{ needs.branch-deploy.outputs.noop }}
-        run: |
-          set -euo pipefail
-          case "$NOOP" in
-            true) exec script/noop ;;
-            false) exec script/deploy ;;
-            *) echo "Branch Deploy returned an invalid noop value" >&2; exit 1 ;;
-          esac
+          DEPLOYMENT_SHA: ${{ needs.branch-deploy.outputs.sha }}
+          SUMMARY_MODE: ${{ needs.branch-deploy.outputs.noop == 'true' && 'noop' || 'deploy' }}
+          PLAN_SUMMARY: ${{ needs.terraform.outputs.summary }}
+          JOB_RESULT: ${{ needs.terraform.result }}
+        run: node .github/scripts/deployment-summary.ts render
 
   status:
     name: status
-    needs: [branch-deploy, terraform]
+    needs: [branch-deploy, terraform, render]
     if: ${{ always() && needs.branch-deploy.outputs.continue == 'true' }}
     runs-on: ubuntu-latest
     permissions:
@@ -136,10 +190,11 @@ jobs:
       - name: report result
         uses: GrantBirki/branch-deploy@9a6ed7fac18108babd7fdc3903d3d8f0a5ad8d66  # v12.1.1
         env:
-          DEPLOY_MESSAGE: "Terraform job result: **${{ needs.terraform.result }}**. Full output is available in the workflow logs."
+          DEPLOY_MESSAGE: >-
+            ${{ needs.render.outputs.message || format('Terraform job result: {0}. Plan details unavailable; see workflow logs.', needs.terraform.result) }}
         with:
           context: ${{ needs.branch-deploy.outputs.context }}
-          job_results: ${{ toJSON(needs.*.result) }}
+          job_results: '["${{ needs.branch-deploy.result }}", "${{ needs.terraform.result }}"]'
           result_mode: true
 
   pr-status:

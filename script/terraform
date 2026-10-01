@@ -5,6 +5,7 @@ set -euo pipefail
 # shellcheck source=script/env
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env"
 require_terraform
+node "$ROOT/.github/scripts/check-terraform-scope.ts" "$TERRAFORM_ROOT"
 
 mode="${1:-}"
 case "$mode" in
@@ -17,10 +18,18 @@ if [[ "$revision" != "local" && ! "$revision" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]
   die "DEPLOYMENT_SHA must be an exact 40- or 64-character lowercase Git SHA"
 fi
 
+umask 077
 runtime_dir="$(make_runtime_dir)"
 state_path="$runtime_dir/terraform.tfstate"
 plan_path="$runtime_dir/terraform.tfplan"
 export TF_DATA_DIR="$runtime_dir/terraform-data"
+export TF_CLI_CONFIG_FILE="$runtime_dir/terraform.rc"
+# CLI options and provider caches must not override the disposable lifecycle.
+for variable in $(compgen -v); do
+  case "$variable" in
+    TF_CLI_ARGS*|TF_PLUGIN_CACHE_DIR|TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE) unset "$variable" ;;
+  esac
+done
 
 cleanup() {
   local original_status=$?
@@ -31,10 +40,10 @@ cleanup() {
   set +e
 
   if [[ -f "$state_path" ]]; then
-    resources="$(terraform -chdir="$ROOT" state list 2>/dev/null)"
+    resources="$(terraform -chdir="$TERRAFORM_ROOT" state list 2>/dev/null)"
     if [[ -n "$resources" ]]; then
       printf 'Cleaning local Terraform state after an incomplete %s...\n' "$mode" >&2
-      if ! terraform -chdir="$ROOT" destroy \
+      if ! terraform -chdir="$TERRAFORM_ROOT" destroy \
         -auto-approve \
         -input=false \
         -no-color \
@@ -57,44 +66,55 @@ cleanup() {
 
 trap cleanup EXIT
 
-terraform -chdir="$ROOT" init \
+mkdir "$runtime_dir/providers"
+printf 'disable_checkpoint = true\n' > "$TF_CLI_CONFIG_FILE"
+
+terraform -chdir="$TERRAFORM_ROOT" init \
   -backend-config="path=$state_path" \
   -input=false \
   -no-color \
-  -reconfigure
-terraform -chdir="$ROOT" validate -no-color
-terraform -chdir="$ROOT" plan \
+  -reconfigure \
+  -get=false \
+  -plugin-dir="$runtime_dir/providers"
+terraform -chdir="$TERRAFORM_ROOT" validate -no-color
+terraform -chdir="$TERRAFORM_ROOT" plan \
   -input=false \
   -no-color \
   -out="$plan_path" \
   -var="revision=$revision"
 
+if [[ "${CAPTURE_TERRAFORM_SUMMARY:-false}" == "true" ]]; then
+  if ! SUMMARY_MODE="$mode" node "$ROOT/.github/scripts/deployment-summary.ts" capture "$plan_path"; then
+    printf 'warning: plan summary unavailable; see workflow logs\n' >&2
+  fi
+fi
+
 if [[ "$mode" == "noop" ]]; then
-  terraform -chdir="$ROOT" show -no-color "$plan_path"
+  terraform -chdir="$TERRAFORM_ROOT" show -no-color "$plan_path"
   [[ ! -e "$state_path" ]] || die "noop unexpectedly wrote local state"
   printf 'Noop completed for revision %s; no state was applied.\n' "$revision"
   exit 0
 fi
 
-terraform -chdir="$ROOT" apply -auto-approve -input=false -no-color "$plan_path"
+terraform -chdir="$TERRAFORM_ROOT" apply -auto-approve -input=false -no-color "$plan_path"
 
 [[ -f "$state_path" ]] || die "apply did not write state to the disposable backend path"
 
-resources="$(terraform -chdir="$ROOT" state list)"
+resources="$(terraform -chdir="$TERRAFORM_ROOT" state list)"
 [[ "$resources" == "terraform_data.example" ]] || die "unexpected resources in local state: ${resources:-none}"
 
-recorded_revision="$(terraform -chdir="$ROOT" output -raw deployed_revision)"
+recorded_revision="$(terraform -chdir="$TERRAFORM_ROOT" output -raw deployed_revision)"
 [[ "$recorded_revision" == "$revision" ]] || die "local state recorded revision $recorded_revision instead of $revision"
 
 printf 'Applied and verified local state at revision %s; cleanup is still pending.\n' "$revision"
 
-terraform -chdir="$ROOT" destroy \
+terraform -chdir="$TERRAFORM_ROOT" destroy \
   -auto-approve \
   -input=false \
   -no-color \
   -var="revision=$revision"
 
-resources="$(terraform -chdir="$ROOT" state list)"
+resources="$(terraform -chdir="$TERRAFORM_ROOT" state list)"
 [[ -z "$resources" ]] || die "local state is not empty after destroy: $resources"
 
 printf 'Deployment demonstration completed; local Terraform state destroyed.\n'

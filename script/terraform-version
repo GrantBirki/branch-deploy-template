@@ -2,7 +2,5 @@
 
 set -euo pipefail
 
-# shellcheck source=script/env
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/env"
-
-printf '%s\n' "$TERRAFORM_VERSION"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+exec node "$root/.github/scripts/tool-versions.ts" terraform

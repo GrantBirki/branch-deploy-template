@@ -41,16 +41,5 @@ if grep -R -E 'terraform_version:[[:space:]]*[0-9]' "$ROOT/.github/workflows" >/
   fail '.terraform-version must remain the only Terraform version declaration'
 fi
 
-version_test_dir="$(make_runtime_dir)"
-trap 'remove_runtime_dir "$version_test_dir"' EXIT
-printf '2.3.4\n' > "$version_test_dir/valid"
-printf 'latest\n' > "$version_test_dir/floating"
-printf '2.3.4\n2.3.5\n' > "$version_test_dir/multiple"
-if [[ "$(read_terraform_version "$version_test_dir/valid")" != '2.3.4' ]] ||
-  (read_terraform_version "$version_test_dir/floating") >/dev/null 2>&1 ||
-  (read_terraform_version "$version_test_dir/multiple") >/dev/null 2>&1; then
-  fail 'Terraform version parsing must accept one exact stable release only'
-fi
-
 [[ $failures -eq 0 ]] || exit 1
 printf 'Workflow pins, checkout credentials, cache policy, and toolchain selection are valid.\n'

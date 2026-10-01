@@ -9,23 +9,10 @@ die() {
   exit 1
 }
 
-read_terraform_version() {
-  local version_file="$1"
-  local line_count
-  local version
+TERRAFORM_VERSION="$("$ROOT/script/terraform-version")"
 
-  [[ -f "$version_file" ]] || die "missing Terraform version file: $version_file"
-  line_count="$(grep -c '^' "$version_file" || true)"
-  [[ "$line_count" -eq 1 ]] || die "Terraform version file must contain exactly one line"
-  version="$(sed -n '1p' "$version_file")"
-  [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "Terraform version must be an exact stable release"
-
-  printf '%s\n' "$version"
-}
-
-TERRAFORM_VERSION="$(read_terraform_version "$ROOT/.terraform-version")"
-
-export ROOT TERRAFORM_VERSION
+TERRAFORM_ROOT="${TERRAFORM_ROOT:-$ROOT}"
+export ROOT TERRAFORM_ROOT TERRAFORM_VERSION
 
 # Non-default workspaces use a different local state path than the disposable backend.
 export TF_WORKSPACE=default
@@ -33,9 +20,7 @@ export TF_WORKSPACE=default
 require_terraform() {
   command -v terraform >/dev/null 2>&1 || die "Terraform ${TERRAFORM_VERSION} is required"
 
-  local actual
-  actual="$(terraform version | sed -n '1s/^Terraform v//p')"
-  [[ "$actual" == "$TERRAFORM_VERSION" ]] || die "Terraform ${TERRAFORM_VERSION} is required; found ${actual:-unknown}"
+  node "$ROOT/.github/scripts/tool-versions.ts" verify >/dev/null
 }
 
 make_runtime_dir() {

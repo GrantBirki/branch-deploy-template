@@ -11,7 +11,7 @@
 - Treat `.terraform-version` as the only Terraform version source.
 - Keep GitHub Actions pinned to full commit SHAs, permissions minimal, checkout credentials disabled, and caches off.
 - Keep trusted admission and result handling separate from candidate Terraform execution. A noop executes candidate code and is not a trusted inspection.
-- Preserve exact-SHA checkout and verification. Do not pass candidate artifacts, output, or caches into a privileged job.
+- Preserve exact-SHA checkout and verification for trusted tooling and candidate Terraform. Validate bounded candidate summaries in a fresh read-only job; privileged reporting may receive only its rendered Markdown and GitHub job results. Never execute candidate code or consume candidate artifacts or caches in a privileged job.
 - Continue using the built-in `terraform_data` resource unless the example truly needs an external provider. Follow `docs/provider-vendoring.md` before adding one.
 
 ## Testing

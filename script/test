@@ -12,3 +12,5 @@ export TF_DATA_DIR="$runtime_dir/terraform-data"
 
 terraform -chdir="$ROOT" init -backend=false -input=false -no-color
 terraform -chdir="$ROOT" test -no-color
+
+node --test "$ROOT"/tests/*.test.ts

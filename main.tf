@@ -1,7 +1,3 @@
-terraform {
-  backend "local" {}
-}
-
 variable "revision" {
   description = "The exact revision represented by this local demonstration."
   type        = string
