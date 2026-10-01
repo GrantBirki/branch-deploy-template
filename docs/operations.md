@@ -18,6 +18,8 @@ Branch Deploy result mode reports the noop or deploy outcome for the admitted SH
 
 Deployments claim sticky locks that remain until `.unlock` or merge cleanup; noops keep the default non-sticky behavior. Result mode also keeps the original lock when execution is cancelled. A force-cancelled run, lost runner, or result job that never starts can leave completion unfinished. Use `.wcid` to inspect the current lock before deciding whether a manual `.unlock` is appropriate.
 
+Rerun the whole IssueOps workflow to obtain fresh admission; rerunning only failed jobs cannot reuse a prior attempt's context. Before retrying, inspect the execution logs, deployment record, and lock: reporting can fail after apply and cleanup succeeded. A successful resource-action summary does not prove unchanged outputs or state. Pre-merge comments also use the current default-branch workflow and helpers, so they do not exercise a PR's new trusted tooling.
+
 The [unlock on merge workflow](../.github/workflows/unlock-on-merge.yml) asks Branch Deploy to release locks created by a pull request after GitHub reports that pull request merged. It uses the same `production` environment target and does not check out or run candidate content. The pinned action's compare-and-delete protection leaves a lock alone if another operation replaced it during cleanup.
 
 ## Pull request status
