@@ -46,9 +46,10 @@ test("successful summaries show grouped planned actions without inventing apply 
   for (const mode of ["plan", "apply"] as const) {
     const operation = { ...identity, mode };
     const message = renderSummary(JSON.stringify(captureSummary(plan, operation)), operation, "success");
-    assert.ok(message.startsWith("### Create (1)"));
-    assert.ok(message.includes(`<details><summary>${mode === "plan" ? "Plan" : "Apply"}</summary>`));
-    assert.ok(message.includes("terraform_data.example: create"));
+    assert.ok(message.startsWith(mode === "plan" ? "### Create (1)" : "**Planned changes**\n\n### Create (1)"));
+    assert.ok(message.includes("<details><summary>Plan</summary>"));
+    assert.ok(message.indexOf("### Create (1)") < message.indexOf("<details>"));
+    assert.ok(message.includes("Plan: 1 to add, 0 to change, 0 to destroy."));
     assert.ok(!message.includes("Apply complete"));
     assert.ok(!message.includes("do-not-publish"));
     assert.ok(message.length < 60_000);
@@ -56,13 +57,13 @@ test("successful summaries show grouped planned actions without inventing apply 
 });
 
 test("unsuccessful job results stay visible alongside informational planned actions", () => {
-  for (const outcome of ["failure", "cancelled", "skipped"]) {
+  for (const outcome of ["failure", "cancelled", "skipped", "unknown"]) {
     const message = renderSummary(serialized(), identity, outcome);
-    assert.ok(message.startsWith(`Terraform job result: **${outcome}**.\n\n### Create (1)`));
-    assert.ok(message.includes("terraform_data.example: create"));
+    assert.ok(message.startsWith(`Terraform job result: **${outcome}**.\n\n**Planned changes**\n\n### Create (1)`));
+    assert.ok(message.includes("Plan: 1 to add, 0 to change, 0 to destroy."));
     assert.ok(!message.includes("do-not-publish"));
   }
-  assert.throws(() => renderSummary(serialized(), identity, "unknown"));
+  assert.throws(() => renderSummary(serialized(), identity, "invented"));
 });
 
 test("missing, malicious, and stale summaries fall back without inventing success or no changes", () => {
@@ -82,8 +83,55 @@ test("resource-only summaries do not claim that outputs or state are unchanged",
       output_changes: { receipt: { actions: ["update"], before: "old", after: "new" } },
     }, identity);
     const message = renderSummary(JSON.stringify(summary), identity, "success");
-    assert.ok(message.includes("No planned resource changes."));
+    assert.equal(message, "✅ **Resources: no changes planned.**");
     assert.ok(!message.includes("Your infrastructure matches the configuration"));
     assert.ok(!message.includes("receipt"));
+  }
+});
+
+test("imports and replacements retain their meaning while unchanged rows disappear", () => {
+  const changes = [
+    { address: "terraform_data.example_import", change: { actions: ["no-op"], importing: { id: "private-import-id" } } },
+    { address: "terraform_data.example_create", change: { actions: ["create"] } },
+    { address: "terraform_data.example_update", change: { actions: ["update"] } },
+    { address: "terraform_data.example_replace_first", change: { actions: ["delete", "create"] } },
+    { address: "terraform_data.example_replace_last", change: { actions: ["create", "delete"] } },
+    { address: "terraform_data.example_delete", change: { actions: ["delete"] } },
+    { address: "terraform_data.example_unchanged", change: { actions: ["no-op"] } },
+    { address: "terraform_data.example_read", change: { actions: ["read"] } },
+  ];
+  const message = renderSummary(JSON.stringify(captureSummary({ resource_changes: changes }, identity)), identity, "success");
+  const [visible, details] = message.split("<details>");
+  for (const group of ["Import (1)", "Create (1)", "Update (1)", "Replace (2)", "Delete (1)"]) {
+    assert.ok(visible.includes(`### ${group}`));
+    assert.ok(!details.includes(`### ${group}`));
+  }
+  assert.ok(details.includes("# terraform_data.example_replace_first: destroy, then create"));
+  assert.ok(details.includes("# terraform_data.example_replace_last: create before destroy"));
+  assert.ok(details.includes("Plan: 1 to import, 3 to add, 1 to change, 3 to destroy."));
+  for (const omitted of ["example_unchanged", "example_read", "no-op", "private-import-id"]) assert.ok(!message.includes(omitted));
+});
+
+test("bounded import groups preserve totals and separate address rows", () => {
+  const changes = Array.from({ length: 30 }, (_, index) => ({
+    address: `terraform_data.example_import_${index}`, change: { actions: ["no-op"], importing: true },
+  }));
+  const message = renderSummary(JSON.stringify(captureSummary({ resource_changes: changes }, identity)), identity, "success");
+  assert.ok(message.startsWith("### Import (30)"));
+  assert.ok(message.includes("`terraform_data.example_import_0`  \n⬆️ `terraform_data.example_import_1`"));
+  assert.equal((message.match(/⬆️ `/g) ?? []).length, 25);
+  assert.ok(message.includes("_... and 5 more._"));
+  assert.ok(message.includes("Plan: 30 to import, 0 to add, 0 to change, 0 to destroy."));
+  assert.ok(!message.includes("No changes"));
+});
+
+test("missing and truncated evidence preserves every known job outcome", () => {
+  for (const outcome of ["success", "failure", "cancelled", "skipped", "unknown"]) {
+    for (const payload of ["", serialized().slice(0, -1), "x".repeat(MAX_SUMMARY_BYTES + 1)]) {
+      const message = renderSummary(payload, identity, outcome);
+      assert.ok(message.startsWith(`Terraform job result: **${outcome}**.`));
+      assert.ok(message.includes("Plan details are unavailable or invalid"));
+      for (const unsupported of ["No changes", "no changes planned", "Apply complete", "<details>"]) assert.ok(!message.includes(unsupported));
+    }
   }
 });

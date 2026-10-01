@@ -16,6 +16,8 @@ Nothing persists between jobs or workflow runs. This is deliberate. The example 
 
 `terraform_data` is a built-in resource, so it demonstrates Terraform's real plan, apply, state, output, and destroy behavior without provider credentials, provider downloads, or a dependency lock file. If an external provider is added, follow the [provider vendoring guide](provider-vendoring.md) and commit its lock and mirror as one reviewed dependency change.
 
+See [deployment comments](deployment-comments.md) for reusable Markdown examples and the focused rendering fixtures.
+
 ## Tests
 
 GitHub runs each entry point in its own lowercase `lint`, `test`, or `acceptance` workflow.
