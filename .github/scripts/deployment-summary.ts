@@ -89,11 +89,11 @@ export function renderSummary(serialized: string, identity: Identity, outcome: s
   } catch {
     return `${result} Plan details are unavailable or invalid; see the workflow logs.`;
   }
-  const summary = `${result}\n\nPlanned resource changes (informational):\n\n${
+  const summary = `${outcome === "success" ? "" : `${result}\n\n`}${
     renderResourceChangeSummary(classifyResourceChanges(data.resource_changes))}`;
   const display = {
     text: data.resource_changes.map(resource => `${resource.address}: ${resource.change!.actions!.join(", ")}`).join("\n") || "No planned resource changes.",
-    notice: "_Resource actions only; state values and raw output are omitted. See the workflow logs for full output. The job result includes apply, verification, and cleanup when applicable._",
+    notice: "_Planned resource actions only; see the workflow logs for full output._",
   };
   const fitted = fitCommentToGitHubLimit(templatePath, summary, display, identity.mode);
   return renderDeploymentResults(fitted.displayOutput.text, fitted.displayOutput.notice, fitted.summary, identity.mode);

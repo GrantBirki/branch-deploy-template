@@ -42,15 +42,26 @@ test("resource metadata cannot inject Markdown, templates, shell commands, or fi
   }
 });
 
-test("rendered plan details remain informational and the real job result stays visible", () => {
-  for (const outcome of ["success", "failure", "cancelled", "skipped"]) {
-    const message = renderSummary(serialized(), identity, outcome);
-    assert.ok(message.includes(`Terraform job result: **${outcome}**`));
-    assert.ok(message.includes("Planned resource changes (informational)"));
-    assert.ok(message.includes("Create (1)"));
+test("successful summaries show grouped changes and clearly label plan metadata for either operation", () => {
+  for (const mode of ["plan", "apply"] as const) {
+    const operation = { ...identity, mode };
+    const message = renderSummary(JSON.stringify(captureSummary(plan, operation)), operation, "success");
+    assert.ok(message.startsWith("### Create (1)"));
+    assert.ok(message.includes(`<details><summary>${mode === "plan" ? "Plan" : "Apply"}</summary>`));
     assert.ok(message.includes("terraform_data.example: create"));
+    assert.ok(message.includes("Planned resource actions only"));
+    assert.ok(!message.includes("Apply complete"));
     assert.ok(!message.includes("do-not-publish"));
     assert.ok(message.length < 60_000);
+  }
+});
+
+test("unsuccessful job results stay visible alongside informational planned actions", () => {
+  for (const outcome of ["failure", "cancelled", "skipped"]) {
+    const message = renderSummary(serialized(), identity, outcome);
+    assert.ok(message.startsWith(`Terraform job result: **${outcome}**.\n\n### Create (1)`));
+    assert.ok(message.includes("Planned resource actions only"));
+    assert.ok(!message.includes("do-not-publish"));
   }
   assert.throws(() => renderSummary(serialized(), identity, "unknown"));
 });
