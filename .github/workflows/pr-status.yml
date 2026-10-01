@@ -5,9 +5,11 @@ on:
   pull_request_target:  # zizmor: ignore[dangerous-triggers] trusted metadata only; no candidate checkout or execution
     branches: [main]
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
+  pull_request_review:
+    types: [submitted, dismissed]
   status:
   workflow_run:  # zizmor: ignore[dangerous-triggers] API metadata only; no artifacts or candidate execution
-    workflows: [lint, test, acceptance, review]
+    workflows: [lint, test, acceptance]
     types: [completed]
 
 permissions: {}
@@ -15,6 +17,11 @@ permissions: {}
 jobs:
   resolve:
     name: resolve
+    if: >-
+      ${{
+        github.event_name != 'pull_request_review' ||
+        github.event.pull_request.head.repo.full_name == github.repository
+      }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

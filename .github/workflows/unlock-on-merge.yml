@@ -18,5 +18,5 @@ jobs:
       - name: unlock on merge
         uses: GrantBirki/branch-deploy@9a6ed7fac18108babd7fdc3903d3d8f0a5ad8d66  # v12.1.1
         with:
-          environment_targets: test
+          environment_targets: production
           unlock_on_merge_mode: true

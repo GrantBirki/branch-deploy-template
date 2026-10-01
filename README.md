@@ -24,7 +24,7 @@ The same scripts run locally and in GitHub Actions. There is no package manager,
 After this workflow is present on the default branch, open a pull request and wait for CI to pass. The trusted `branch-deploy` job accepts commands only from commenters whose author association is `OWNER` or `MEMBER`:
 
 ```text
-.noop test
+.noop
 ```
 
 `author_association` describes the commenter, not the pull request source. This guard supplements Branch Deploy's pinned fork-denial default and its permissions, review, confirmation, and exact-SHA checks; add `COLLABORATOR` only when the repository intentionally trusts outside collaborators to request deployments.
@@ -34,16 +34,16 @@ The noop path checks out the exact commit approved by Branch Deploy and runs `te
 To exercise the local apply lifecycle, comment:
 
 ```text
-.deploy test
+.deploy
 ```
 
-Both commands require a confirmation reaction. The workflow admits commands in a trusted job, executes the selected commit in a separate job, and reports the result in a final trusted job. `.lock`, `.unlock`, `.wcid`, and `.help` are also handled by Branch Deploy.
+Both commands use `production`, the only deployment environment, and require a confirmation reaction. Branch Deploy already defaults to `production`; `environment_targets` restricts the available targets to that environment. The workflow admits commands in a trusted job, executes the selected commit in a separate job, and reports the result in a final trusted job. `.lock`, `.unlock`, `.wcid`, and `.help` are also handled by Branch Deploy.
 
 Branch Deploy result mode reports the noop or deploy outcome for the admitted SHA in its pull request comment. The execution job's result determines success; candidate output is never read by the privileged result job.
 
-Result mode keeps the original lock when execution is cancelled. A force-cancelled run, lost runner, or result job that never starts can leave completion unfinished. Use `.wcid` to inspect the current lock before deciding whether a manual `.unlock test` is appropriate.
+Result mode keeps the original lock when execution is cancelled. A force-cancelled run, lost runner, or result job that never starts can leave completion unfinished. Use `.wcid` to inspect the current lock before deciding whether a manual `.unlock` is appropriate.
 
-The [unlock on merge workflow](.github/workflows/unlock-on-merge.yml) asks Branch Deploy to release locks created by a pull request after GitHub reports that pull request merged. It uses the same `test` environment target and does not check out or run candidate content. The pinned action's compare-and-delete protection leaves a lock alone if another operation replaced it during cleanup.
+The [unlock on merge workflow](.github/workflows/unlock-on-merge.yml) asks Branch Deploy to release locks created by a pull request after GitHub reports that pull request merged. It uses the same `production` environment target and does not check out or run candidate content. The pinned action's compare-and-delete protection leaves a lock alone if another operation replaced it during cleanup.
 
 ## Pull request status
 
@@ -56,13 +56,13 @@ The `new pull request` workflow leaves deployment instructions. The `pr status` 
 
 The small event adapter resolves affected pull requests, ignores forks and deleted source repositories, and clears labels when a pull request closes or its head changes during evaluation. It never checks out candidate content. A review is current according to GitHub's review policy; configure dismissal of stale approvals when approvals must be tied to the latest commit. Labels do not require a prior noop and do not record deployment completion.
 
-Review events use a PR-controlled workflow revision. The small `review` workflow has no token permissions and only signals completion; `pr status` handles that signal from the default branch and fetches the current review state from GitHub.
+`pr status` handles submitted and dismissed reviews directly and fetches the current review state from GitHub. [Review events run the PR workflow revision](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_review), so this path trusts contributors with permission to push branches to the repository. Fork review runs are skipped. Pull request lifecycle, CI completion, and commit status events use the default-branch workflow.
 
 These labels are informational. Branch Deploy remains the authorization gate and independently enforces actor permissions, reviews, checks, confirmation, fork denial, and exact-SHA selection.
 
 ## Default-branch deploy
 
-The [deploy workflow](.github/workflows/deploy.yml) uses Branch Deploy's public [merge commit strategy](https://github.com/GrantBirki/branch-deploy/blob/main/docs/merge-commit-strategy.md) on pushes to `main`. A read-only job compares the latest default-branch tree with the newest relevant Branch Deploy deployment for `test`. It skips execution only when that deployment is active and its tree matches. Missing, unsuccessful, or different deployment history leads to a fallback run.
+The [deploy workflow](.github/workflows/deploy.yml) uses Branch Deploy's public [merge commit strategy](https://github.com/GrantBirki/branch-deploy/blob/main/docs/merge-commit-strategy.md) on pushes to `main`. A read-only job compares the latest default-branch tree with the newest relevant Branch Deploy deployment for `production`. It skips execution only when that deployment is active and its tree matches. Missing, unsuccessful, or different deployment history leads to a fallback run.
 
 The fallback checks out and verifies the exact default-branch SHA selected by the action, which may be newer than the push event's SHA. It runs `script/deploy` and preserves failures as workflow failures. Merge mode does not acquire a Branch Deploy lock or return result-mode context. The fallback therefore uses the workflow result and does not create a deployment record or release an IssueOps lock. A later push may run the fallback again because it did not add deployment history.
 

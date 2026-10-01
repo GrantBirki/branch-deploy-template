@@ -59,8 +59,7 @@ jobs:
         with:
           commit_verification: true
           deployment_confirmation: true
-          environment: test
-          environment_targets: test
+          environment_targets: production
           skip_completing: true
 
   terraform:
