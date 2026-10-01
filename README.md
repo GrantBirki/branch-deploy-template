@@ -6,7 +6,7 @@
 
 A small Terraform starter for trying [Branch Deploy](https://github.com/GrantBirki/branch-deploy) with pull request comments.
 
-The example uses Terraform's built-in `terraform_data` resource. It creates no cloud infrastructure: each deployment applies, verifies, and destroys temporary local state. No cloud credentials or external providers are needed.
+The example uses Terraform's built-in `terraform_data` resource. It creates no cloud infrastructure; each deployment applies, verifies, and destroys temporary local state. No cloud credentials or external providers are needed.
 
 ## Quick start
 
