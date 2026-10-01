@@ -18,6 +18,18 @@ The template explicitly sets `deployment_confirmation: "false"`, matching the ac
 
 The merge-time deployment check must use the same environment as IssueOps and unlock-on-merge. Decide whether automatic fallback applies are appropriate for persistent infrastructure instead of inheriting the disposable demonstration's behavior.
 
+## Preserve execution outcomes when reporting fails
+
+The template renders a bounded plan-action summary in a separate read-only job. It does not collect apply completion events; deployment success covers the disposable apply, verification, and cleanup lifecycle. A derived project that adds actual apply totals needs to preserve the process result independently of summary capture.
+
+Save the apply exit code before reading its event file. Validate the admitted identity and exit code, then construct a bounded fallback with that exit code and unavailable totals. Put file existence, size, read, and parse checks inside the path that emits this fallback when capture fails. Otherwise an oversized or unreadable log can discard known execution success and make a reporting failure look like an apply failure.
+
+Keep capture failure visible under the project's reporting policy without overwriting the execution fact. A known exit-zero apply with unavailable totals can say “Apply succeeded; resource totals unavailable.” Preserve a nonzero apply exit code even when capture also fails. If execution itself is unknown, say so; never infer success, zero changes, or rollback from missing output. Invalid identity or exit-code input cannot establish an outcome, and a failed output write may prevent even the fallback from being published.
+
+Use validated completion metadata for actual totals and label saved-plan actions as planned. Bind summaries to the admitted SHA, run, attempt, and operation; retain bounded, value-free fields and the read-only rendering boundary. Do not raise limits or forward raw events to privileged reporting to avoid a capture failure.
+
+For an implementation that collects events, use small fake-process fixtures for exit zero and nonzero combined with oversized, missing, unreadable, malformed, and truncated event files. Check both the preserved execution result and the separate reporting failure. Include missing completion events, invalid identity, output-write failure, and sentinel values that must never appear in comments or parser errors. These tests do not require real infrastructure or a new test framework.
+
 ## Adopt existing resources separately from changes
 
 Before declaring an import, verify the existing owner, live identity and values, provider import support, required permissions, and side effects. Preserve external owners such as application deployments and data management. Match actual provider reads rather than inferred dashboard defaults, and do not hide meaningful drift with broad lifecycle ignores.

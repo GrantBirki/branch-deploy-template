@@ -22,6 +22,8 @@ Deployments claim sticky locks that remain until `.unlock` or merge cleanup; noo
 
 Rerun the whole IssueOps workflow to obtain fresh admission; rerunning only failed jobs cannot reuse a prior attempt's context. Before retrying, inspect the execution logs, deployment record, and lock: reporting can fail after apply and cleanup succeeded. A successful resource-action summary does not prove unchanged outputs or state. Pre-merge comments also use the current default-branch workflow and helpers, so they do not exercise a PR's new trusted tooling.
 
+When a summary is unavailable, distinguish an execution failure from a rendering or reporting failure before retrying. In this template, inspect the execution job for apply, verification, and cleanup results; successful apply alone does not establish a completed demonstration. In a persistent-state adaptation, reporting failure may follow a successful state change. Preserve that known outcome and investigate missing detail rather than retrying solely to repair the comment. See [execution and reporting outcomes](adapting.md#preserve-execution-outcomes-when-reporting-fails).
+
 The [unlock on merge workflow](../.github/workflows/unlock-on-merge.yml) asks Branch Deploy to release locks created by a pull request after GitHub reports that pull request merged. It uses the same `production` environment target and does not check out or run candidate content. The pinned action's compare-and-delete protection leaves a lock alone if another operation replaced it during cleanup.
 
 ## Pull request status
