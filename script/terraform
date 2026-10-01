@@ -78,6 +78,8 @@ fi
 
 terraform -chdir="$ROOT" apply -auto-approve -input=false -no-color "$plan_path"
 
+[[ -f "$state_path" ]] || die "apply did not write state to the disposable backend path"
+
 resources="$(terraform -chdir="$ROOT" state list)"
 [[ "$resources" == "terraform_data.example" ]] || die "unexpected resources in local state: ${resources:-none}"
 

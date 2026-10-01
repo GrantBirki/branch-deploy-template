@@ -12,11 +12,11 @@ mkdir -p "$acceptance_dir/runtime" "$acceptance_dir/logs"
 
 revision="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
-RUNNER_TEMP="$acceptance_dir/runtime" DEPLOYMENT_SHA="$revision" "$ROOT/script/noop" \
+TF_WORKSPACE=acceptance RUNNER_TEMP="$acceptance_dir/runtime" DEPLOYMENT_SHA="$revision" "$ROOT/script/noop" \
   >"$acceptance_dir/logs/noop.log" 2>&1
 grep -F "Noop completed for revision $revision; no state was applied." "$acceptance_dir/logs/noop.log" >/dev/null
 
-RUNNER_TEMP="$acceptance_dir/runtime" DEPLOYMENT_SHA="$revision" "$ROOT/script/deploy" \
+TF_WORKSPACE=acceptance RUNNER_TEMP="$acceptance_dir/runtime" DEPLOYMENT_SHA="$revision" "$ROOT/script/deploy" \
   >"$acceptance_dir/logs/deploy.log" 2>&1
 grep -F "Applied and verified local state at revision $revision; cleanup is still pending." "$acceptance_dir/logs/deploy.log" >/dev/null
 grep -F 'Deployment demonstration completed; local Terraform state destroyed.' "$acceptance_dir/logs/deploy.log" >/dev/null

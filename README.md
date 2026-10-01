@@ -39,6 +39,8 @@ To exercise the local apply lifecycle, comment:
 
 Both commands require a confirmation reaction. The workflow admits commands in a trusted job, executes the selected commit in a separate job, and reports the result in a final trusted job. `.lock`, `.unlock`, `.wcid`, and `.help` are also handled by Branch Deploy.
 
+Branch Deploy result mode reports the noop or deploy outcome for the admitted SHA in its pull request comment. The execution job's result determines success; candidate output is never read by the privileged result job.
+
 Result mode keeps the original lock when execution is cancelled. A force-cancelled run, lost runner, or result job that never starts can leave completion unfinished. Use `.wcid` to inspect the current lock before deciding whether a manual `.unlock test` is appropriate.
 
 The [unlock on merge workflow](.github/workflows/unlock-on-merge.yml) asks Branch Deploy to release locks created by a pull request after GitHub reports that pull request merged. It uses the same `test` environment target and does not check out or run candidate content. The pinned action's compare-and-delete protection leaves a lock alone if another operation replaced it during cleanup.
@@ -47,23 +49,28 @@ The [unlock on merge workflow](.github/workflows/unlock-on-merge.yml) asks Branc
 
 Create these repository labels before enabling the metadata workflows:
 
-- `deploy: noop`
-- `deploy: needs review`
-- `deploy: needs checks`
-- `deploy: needs noop`
 - `deploy: ready`
+- `deploy: needs attention`
 
-The `new pull request` workflow leaves concise deployment instructions. The `pr status` workflow then reconciles the labels from trusted GitHub metadata without checking out or running pull request content. A ready label requires successful `lint`, `test`, and `acceptance` checks, an approval submitted for the current head SHA, and a successful noop status recorded for that same SHA.
+The `new pull request` workflow leaves deployment instructions. The `pr status` workflow uses the released [GrantBirki/pr-status](https://github.com/GrantBirki/pr-status/tree/v3.0.0) action to evaluate GitHub's review decision, at least one current non-bot approval, a non-draft pull request, and passing CI. It applies `deploy: ready` when those checks pass and `deploy: needs attention` otherwise. Missing CI evidence fails the evaluation.
+
+The small event adapter resolves affected pull requests, ignores forks and deleted source repositories, and clears labels when a pull request closes or its head changes during evaluation. It never checks out candidate content. A review is current according to GitHub's review policy; configure dismissal of stale approvals when approvals must be tied to the latest commit. Labels do not require a prior noop and do not record deployment completion.
+
+Review events use a PR-controlled workflow revision. The small `review` workflow has no token permissions and only signals completion; `pr status` handles that signal from the default branch and fetches the current review state from GitHub.
 
 These labels are informational. Branch Deploy remains the authorization gate and independently enforces actor permissions, reviews, checks, confirmation, fork denial, and exact-SHA selection.
 
 ## Default-branch deploy
 
-The [deploy workflow](.github/workflows/deploy.yml) runs `script/deploy` for every push to `main`, including a merged pull request. It checks out and verifies the exact pushed commit, reads Terraform from that trusted revision, and preserves deployment failures as workflow failures.
+The [deploy workflow](.github/workflows/deploy.yml) uses Branch Deploy's public [merge commit strategy](https://github.com/GrantBirki/branch-deploy/blob/main/docs/merge-commit-strategy.md) on pushes to `main`. A read-only job compares the latest default-branch tree with the newest relevant Branch Deploy deployment for `test`. It skips execution only when that deployment is active and its tree matches. Missing, unsuccessful, or different deployment history leads to a fallback run.
 
-GitHub does not allow an expression in a push branch filter. If the repository's default branch is renamed, update the literal `main` branch in `deploy.yml` and set Branch Deploy's `stable_branch` input during the same change.
+The fallback checks out and verifies the exact default-branch SHA selected by the action, which may be newer than the push event's SHA. It runs `script/deploy` and preserves failures as workflow failures. Merge mode does not acquire a Branch Deploy lock or return result-mode context. The fallback therefore uses the workflow result and does not create a deployment record or release an IssueOps lock. A later push may run the fallback again because it did not add deployment history.
 
-The direct and IssueOps paths share a job-level concurrency group. Only Terraform execution is serialized: the direct path does not create, release, or modify Branch Deploy locks.
+This demonstrates a deployment-history comparison, not persistent infrastructure. A successful IssueOps deployment records completion of the disposable apply-and-destroy exercise. An active GitHub deployment record does not mean Terraform resources or state remain. The comparison is an observation, not an atomic deployment lock.
+
+GitHub does not allow an expression in a push branch filter. If the repository's default branch is renamed, update the literal `main` filters in `.github/workflows/` and set Branch Deploy's `stable_branch` input during the same change.
+
+The direct and IssueOps paths can overlap because they own separate temporary state. There is no shared Terraform state to protect with a GitHub concurrency group. Branch Deploy still coordinates its IssueOps commands with its own locks; unlock-on-merge remains a separate metadata workflow.
 
 ## Trust model
 
@@ -83,7 +90,7 @@ GitHub still provides its normal runner and Actions runtime context to jobs. Thi
 
 ## Local state lifecycle
 
-`script/noop` and `script/deploy` create a fresh directory beneath `RUNNER_TEMP` or `TMPDIR`. Terraform's data directory, plan, and state live there.
+`script/noop` and `script/deploy` create a fresh directory beneath `RUNNER_TEMP` or `TMPDIR`. Terraform's data directory, plan, and state live there. The scripts select the default workspace, overriding any inherited `TF_WORKSPACE`, so a named workspace cannot redirect state into the checkout.
 
 - `script/noop` plans one `terraform_data` resource and exits without applying it.
 - `script/deploy` applies the saved plan, verifies the resource and revision from local state, destroys the resource, verifies that state is empty, and removes the temporary directory.
@@ -97,7 +104,7 @@ Nothing persists between jobs or workflow runs. This is deliberate. The example 
 
 GitHub runs each entry point in its own lowercase `lint`, `test`, or `acceptance` workflow.
 
-- `script/lint` checks Terraform formatting and validation, shell syntax, trusted commenter admission, immutable action pins, checkout credential settings, toolchain pins, and the no-cache policy.
+- `script/lint` checks Terraform formatting and validation, shell syntax, immutable action pins, checkout credential settings, toolchain pins, and the no-cache policy.
 - `script/test` runs Terraform's native tests against the real module.
 - `script/acceptance` invokes the public noop and deploy scripts with real Terraform, checks that temporary state is removed, and verifies apply and cleanup failure semantics with a controlled Terraform fixture.
 

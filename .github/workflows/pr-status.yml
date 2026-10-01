@@ -5,172 +5,112 @@ on:
   pull_request_target:  # zizmor: ignore[dangerous-triggers] trusted metadata only; no candidate checkout or execution
     branches: [main]
     types: [opened, reopened, synchronize, ready_for_review, converted_to_draft, closed]
-  pull_request_review:
-    types: [submitted, dismissed]
   status:
-  workflow_call:
-    inputs:
-      pull_request_number:
-        required: false
-        type: number
   workflow_run:  # zizmor: ignore[dangerous-triggers] API metadata only; no artifacts or candidate execution
-    workflows: [lint, test, acceptance]
+    workflows: [lint, test, acceptance, review]
     types: [completed]
 
 permissions: {}
 
 jobs:
-  pr-status:
-    name: pr status
+  resolve:
+    name: resolve
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      pulls: ${{ steps.pulls.outputs.pulls }}
+    steps:
+      - name: find pull requests
+        id: pulls
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71  # v9.0.0
+        with:
+          script: |
+            const numbers = new Set();
+            const add = (value) => {
+              const number = Number(value);
+              if (Number.isSafeInteger(number) && number > 0) numbers.add(number);
+            };
+            add(context.payload.pull_request?.number);
+            for (const pull of context.payload.workflow_run?.pull_requests || []) add(pull.number);
+            if (context.eventName === "status") {
+              const pulls = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+                ...context.repo, commit_sha: context.payload.sha, per_page: 100
+              });
+              for (const pull of pulls) add(pull.number);
+            }
+            core.setOutput("pulls", [...numbers]);
+
+  pr-status:
+    name: pr status (${{ matrix.pull }})
+    needs: resolve
+    if: ${{ needs.resolve.outputs.pulls != '[]' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pull: ${{ fromJSON(needs.resolve.outputs.pulls) }}
     permissions:
       checks: read
       contents: read
       pull-requests: write
       statuses: read
     steps:
-      - name: reconcile labels
+      - name: current pull request
+        id: pull
         uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71  # v9.0.0
         env:
-          CALL_PULL_REQUEST: ${{ inputs.pull_request_number }}
+          PULL_REQUEST: ${{ matrix.pull }}
         with:
           script: |
-            const managed = [
-              "deploy: noop",
-              "deploy: needs review",
-              "deploy: needs checks",
-              "deploy: needs noop",
-              "deploy: ready"
-            ];
-            const requiredChecks = ["lint", "test", "acceptance"];
-            const numbers = new Set();
-
-            const calledPull = Number(process.env.CALL_PULL_REQUEST || 0);
-            if (Number.isInteger(calledPull) && calledPull > 0) {
-              numbers.add(calledPull);
+            let pull;
+            try {
+              ({data: pull} = await github.rest.pulls.get({
+                ...context.repo, pull_number: Number(process.env.PULL_REQUEST)
+              }));
+            } catch (error) {
+              if (error.status === 404) return;
+              throw error;
             }
-            if (context.payload.pull_request) {
-              numbers.add(context.payload.pull_request.number);
+            if (pull.head.repo?.full_name !== context.payload.repository.full_name) return;
+            core.setOutput("head", pull.head.sha);
+            core.setOutput("open", pull.state === "open");
+
+      - name: evaluate status
+        id: status
+        if: ${{ steps.pull.outputs.open == 'true' }}
+        uses: GrantBirki/pr-status@90636f5a04ca4a039bfae198f9bf74996fa636df  # v3.0.0
+        with:
+          pr_number: ${{ matrix.pull }}
+          evaluations: approved,min_approvals=1,not_draft,ci_passing
+          workflow: pr status (${{ matrix.pull }})
+          pass_labels: 'deploy: ready'
+          fail_labels: 'deploy: needs attention'
+
+      - name: clear stale labels
+        if: ${{ always() && steps.pull.outputs.head != '' }}
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71  # v9.0.0
+        env:
+          PULL_REQUEST: ${{ matrix.pull }}
+          EXPECTED_HEAD: ${{ steps.pull.outputs.head }}
+          STATUS_OUTCOME: ${{ steps.status.outcome }}
+        with:
+          script: |
+            const number = Number(process.env.PULL_REQUEST);
+            let pull;
+            try {
+              ({data: pull} = await github.rest.pulls.get({...context.repo, pull_number: number}));
+            } catch (error) {
+              if (error.status === 404) return;
+              throw error;
             }
-            if (context.payload.workflow_run) {
-              for (const pull of context.payload.workflow_run.pull_requests || []) {
-                numbers.add(pull.number);
+            if (process.env.STATUS_OUTCOME === "success" && pull.state === "open" &&
+                pull.head.sha === process.env.EXPECTED_HEAD &&
+                pull.head.repo?.full_name === context.payload.repository.full_name) return;
+            for (const label of pull.labels) {
+              const name = typeof label === "string" ? label : label.name;
+              if (["deploy: ready", "deploy: needs attention"].includes(name)) {
+                await github.rest.issues.removeLabel({...context.repo, issue_number: number, name});
               }
-            }
-            if (context.eventName === "status") {
-              const pulls = await github.paginate(
-                github.rest.repos.listPullRequestsAssociatedWithCommit,
-                {...context.repo, commit_sha: context.payload.sha, per_page: 100}
-              );
-              for (const pull of pulls) {
-                if (pull.state === "open") numbers.add(pull.number);
-              }
-            }
-
-            for (const pullNumber of numbers) {
-              const {data: pull} = await github.rest.pulls.get({
-                ...context.repo,
-                pull_number: pullNumber
-              });
-              if (pull.head.repo.full_name !== context.payload.repository.full_name) {
-                core.info("skipping fork pull request #" + pullNumber);
-                continue;
-              }
-
-              const current = new Set(
-                pull.labels.map((label) => typeof label === "string" ? label : label.name)
-              );
-              const desired = new Set();
-
-              if (pull.state === "open") {
-                const query = [
-                  "query($owner: String!, $name: String!, $number: Int!) {",
-                  "  repository(owner: $owner, name: $name) {",
-                  "    pullRequest(number: $number) { reviewDecision }",
-                  "  }",
-                  "}"
-                ].join("\n");
-                const reviewData = await github.graphql(query, {
-                  owner: context.repo.owner,
-                  name: context.repo.repo,
-                  number: pullNumber
-                });
-                const reviews = await github.paginate(github.rest.pulls.listReviews, {
-                  ...context.repo,
-                  pull_number: pullNumber,
-                  per_page: 100
-                });
-                const latestReviews = new Map();
-                for (const review of reviews.sort((left, right) => left.id - right.id)) {
-                  if (
-                    review.user &&
-                    ["APPROVED", "CHANGES_REQUESTED", "DISMISSED"].includes(review.state)
-                  ) {
-                    latestReviews.set(review.user.id, review);
-                  }
-                }
-                const effectiveReviews = [...latestReviews.values()];
-                const approvals = effectiveReviews.filter((review) => review.state === "APPROVED");
-                const reviewReady =
-                  !pull.draft &&
-                  reviewData.repository.pullRequest.reviewDecision === "APPROVED" &&
-                  approvals.length > 0 &&
-                  approvals.every((review) => review.commit_id === pull.head.sha) &&
-                  !effectiveReviews.some((review) => review.state === "CHANGES_REQUESTED");
-
-                const {data: checksData} = await github.rest.checks.listForRef({
-                  ...context.repo,
-                  ref: pull.head.sha,
-                  filter: "latest",
-                  per_page: 100
-                });
-                const latestChecks = new Map();
-                for (const check of checksData.check_runs) {
-                  const previous = latestChecks.get(check.name);
-                  if (!previous || check.started_at > previous.started_at) {
-                    latestChecks.set(check.name, check);
-                  }
-                }
-                const checksReady = requiredChecks.every(
-                  (name) => latestChecks.get(name)?.conclusion === "success"
-                );
-
-                const {data: statusData} = await github.rest.repos.getCombinedStatusForRef({
-                  ...context.repo,
-                  ref: pull.head.sha
-                });
-                const noopStatus = statusData.statuses
-                  .filter((status) => status.context === "branch-deploy/noop")
-                  .sort((left, right) => right.id - left.id)[0];
-                const noopReady = noopStatus?.state === "success";
-
-                if (noopReady) desired.add("deploy: noop");
-                if (!reviewReady) {
-                  desired.add("deploy: needs review");
-                } else if (!checksReady) {
-                  desired.add("deploy: needs checks");
-                } else if (!noopReady) {
-                  desired.add("deploy: needs noop");
-                } else {
-                  desired.add("deploy: ready");
-                }
-              }
-
-              for (const label of managed) {
-                if (desired.has(label) && !current.has(label)) {
-                  await github.rest.issues.addLabels({
-                    ...context.repo,
-                    issue_number: pullNumber,
-                    labels: [label]
-                  });
-                }
-                if (!desired.has(label) && current.has(label)) {
-                  await github.rest.issues.removeLabel({
-                    ...context.repo,
-                    issue_number: pullNumber,
-                    name: label
-                  });
-                }
-              }
-              core.info("reconciled pull request #" + pullNumber + " at " + pull.head.sha);
             }

@@ -26,8 +26,8 @@ jobs:
               body: [
                 "### branch deploy",
                 "",
-                "Run `.noop test` after CI passes. Once the exact commit has a successful noop and current approval, the status labels will show that it is ready.",
+                "Run `.noop test` after CI passes and inspect its result before deploying. Status labels summarize reviews and CI; they do not record noop or deployment completion.",
                 "",
-                "Run `.deploy test` only when you intend to exercise the disposable local-state apply flow. Labels summarize state; Branch Deploy still enforces authorization, reviews, checks, confirmation, fork denial, and the exact commit."
+                "Run `.deploy test` only when you intend to exercise the disposable local-state apply flow. Branch Deploy enforces authorization, reviews, checks, confirmation, fork denial, and the exact commit."
               ].join("\n")
             });

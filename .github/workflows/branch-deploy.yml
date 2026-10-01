@@ -50,7 +50,8 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$(git rev-parse HEAD)" == "$TRUSTED_SHA" ]] || exit 1
-          printf 'version=%s\n' "$(script/terraform-version)" >> "$GITHUB_OUTPUT"
+          version="$(script/terraform-version)"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
 
       - name: branch deploy
         id: branch-deploy
@@ -71,9 +72,6 @@ jobs:
         fromJSON(needs.branch-deploy.outputs.context).run_attempt == github.run_attempt
       }}
     runs-on: ubuntu-latest
-    concurrency:
-      group: deployment-test
-      cancel-in-progress: false
     permissions:
       contents: read
     steps:
@@ -133,44 +131,10 @@ jobs:
       contents: write
       deployments: write
       pull-requests: write
-      statuses: write
     steps:
       - name: report result
-        id: result
         uses: GrantBirki/branch-deploy@9a6ed7fac18108babd7fdc3903d3d8f0a5ad8d66  # v12.1.1
         with:
           context: ${{ needs.branch-deploy.outputs.context }}
           job_results: ${{ toJSON(needs.*.result) }}
           result_mode: true
-
-      - name: record noop
-        if: ${{ always() && needs.branch-deploy.outputs.noop == 'true' }}
-        env:
-          DEPLOYMENT_SHA: ${{ needs.branch-deploy.outputs.sha }}
-          GH_TOKEN: ${{ github.token }}
-          RESULT_OUTCOME: ${{ steps.result.outcome }}
-          TERRAFORM_RESULT: ${{ needs.terraform.result }}
-        run: |
-          set -euo pipefail
-          [[ "$DEPLOYMENT_SHA" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]
-          state=failure
-          if [[ "$RESULT_OUTCOME" == success && "$TERRAFORM_RESULT" == success ]]; then
-            state=success
-          fi
-          gh api --method POST "repos/$GITHUB_REPOSITORY/statuses/$DEPLOYMENT_SHA" \
-            -f state="$state" \
-            -f context='branch-deploy/noop' \
-            -f description='noop result for this exact commit' >/dev/null
-
-  pr-status:
-    name: pr status
-    needs: [branch-deploy, terraform, status]
-    if: ${{ always() && needs.branch-deploy.outputs.continue == 'true' }}
-    permissions:
-      checks: read
-      contents: read
-      pull-requests: write
-      statuses: read
-    uses: ./.github/workflows/pr-status.yml
-    with:
-      pull_request_number: ${{ github.event.issue.number }}

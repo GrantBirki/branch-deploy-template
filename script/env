@@ -27,6 +27,9 @@ TERRAFORM_VERSION="$(read_terraform_version "$ROOT/.terraform-version")"
 
 export ROOT TERRAFORM_VERSION
 
+# Non-default workspaces use a different local state path than the disposable backend.
+export TF_WORKSPACE=default
+
 require_terraform() {
   command -v terraform >/dev/null 2>&1 || die "Terraform ${TERRAFORM_VERSION} is required"
 

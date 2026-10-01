@@ -5,35 +5,65 @@ on:
   push:
     branches: [main]
 
-permissions:
-  contents: read
+permissions: {}
 
-# Cache mode: none. The local state lifecycle is isolated to this job.
+# Cache mode: none. Each execution owns disposable local state.
 jobs:
+  deployment-check:
+    name: deployment check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: read
+    outputs:
+      continue: ${{ steps.deployment-check.outputs.continue }}
+      sha: ${{ steps.deployment-check.outputs.sha }}
+    steps:
+      - name: deployment check
+        id: deployment-check
+        uses: GrantBirki/branch-deploy@9a6ed7fac18108babd7fdc3903d3d8f0a5ad8d66  # v12.1.1
+        with:
+          merge_deploy_mode: true
+          environment: test
+
   deploy:
     name: deploy
+    needs: deployment-check
+    if: ${{ needs.deployment-check.outputs.continue == 'true' }}
     runs-on: ubuntu-latest
-    concurrency:
-      group: deployment-test
-      cancel-in-progress: false
+    permissions:
+      contents: read
     steps:
+      - name: validate revision
+        id: revision
+        env:
+          DEPLOYMENT_SHA: ${{ needs.deployment-check.outputs.sha }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$DEPLOYMENT_SHA" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
+            echo "Branch Deploy did not return an exact Git SHA" >&2
+            exit 1
+          fi
+          printf 'sha=%s\n' "$DEPLOYMENT_SHA" >> "$GITHUB_OUTPUT"
+
       - name: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ github.sha }}
+          ref: ${{ steps.revision.outputs.sha }}
 
       - name: verify checkout
         env:
-          DEPLOYMENT_SHA: ${{ github.sha }}
+          DEPLOYMENT_SHA: ${{ steps.revision.outputs.sha }}
         run: |
           set -euo pipefail
-          [[ "$DEPLOYMENT_SHA" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]
           [[ "$(git rev-parse HEAD)" == "$DEPLOYMENT_SHA" ]]
 
       - name: terraform version
         id: version
-        run: printf 'version=%s\n' "$(script/terraform-version)" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(script/terraform-version)"
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
 
       - name: setup terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
@@ -43,5 +73,5 @@ jobs:
 
       - name: deploy
         env:
-          DEPLOYMENT_SHA: ${{ github.sha }}
+          DEPLOYMENT_SHA: ${{ steps.revision.outputs.sha }}
         run: script/deploy

@@ -1,0 +1,17 @@
+---
+name: review
+
+on:
+  pull_request_review:
+    types: [submitted, dismissed]
+
+permissions: {}
+
+# Review events use the PR's workflow revision. Only signal the trusted pr status workflow.
+jobs:
+  review:
+    name: review
+    runs-on: ubuntu-latest
+    steps:
+      - name: signal review
+        run: printf 'Review event received.\n'

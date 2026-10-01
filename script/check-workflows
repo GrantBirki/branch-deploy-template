@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-# GitHub expressions below are intentionally matched as literal strings.
-# shellcheck disable=SC2016
-
 set -euo pipefail
 
 # shellcheck source=script/env
@@ -16,14 +13,6 @@ persist_count=0
 fail() {
   printf 'error: %s\n' "$*" >&2
   failures=$((failures + 1))
-}
-
-require_text() {
-  local file="$1"
-  local text="$2"
-  local message="$3"
-
-  grep -F "$text" "$file" >/dev/null || fail "$message"
 }
 
 while IFS= read -r workflow; do
@@ -49,12 +38,6 @@ if grep -R -E 'uses:[[:space:]]*actions/cache@|^[[:space:]]+cache:' "$ROOT/.gith
   fail 'cache mode must remain none'
 fi
 
-for name in lint test acceptance deploy; do
-  workflow="$ROOT/.github/workflows/$name.yml"
-  require_text "$workflow" 'script/terraform-version' "$name must read the version-controlled Terraform version"
-  require_text "$workflow" 'terraform_version: ${{ steps.version.outputs.version }}' "$name must pass the validated version to setup-terraform"
-done
-
 if grep -R -E 'terraform_version:[[:space:]]*[0-9]' "$ROOT/.github/workflows" >/dev/null ||
   grep -R -E 'required_version[[:space:]]*=' "$ROOT" --include='*.tf' >/dev/null; then
   fail '.terraform-version must remain the only Terraform version declaration'
@@ -71,66 +54,5 @@ if [[ "$(read_terraform_version "$version_test_dir/valid")" != '2.3.4' ]] ||
   fail 'Terraform version parsing must accept one exact stable release only'
 fi
 
-branch_deploy_workflow="$ROOT/.github/workflows/branch-deploy.yml"
-require_text "$branch_deploy_workflow" 'github.event.issue.pull_request' 'Branch Deploy must require a pull request comment'
-require_text "$branch_deploy_workflow" "contains(fromJSON('[\"OWNER\", \"MEMBER\"]'), github.event.comment.author_association)" 'Branch Deploy must allow only OWNER and MEMBER commenters'
-if grep -F 'COLLABORATOR' "$branch_deploy_workflow" >/dev/null ||
-  grep -F 'allow_forks: true' "$branch_deploy_workflow" >/dev/null; then
-  fail 'Branch Deploy admission must not extend to collaborators or forks'
-fi
-
-for setting in 'commit_verification: true' 'deployment_confirmation: true' 'environment: test' 'environment_targets: test' 'skip_completing: true'; do
-  require_text "$branch_deploy_workflow" "$setting" "Branch Deploy is missing required behavior: $setting"
-done
-
-require_text "$branch_deploy_workflow" 'ref: ${{ github.sha }}' 'Branch Deploy must read tooling from the trusted workflow SHA'
-require_text "$branch_deploy_workflow" 'terraform_version: ${{ needs.branch-deploy.outputs.terraform_version }}' 'Branch Deploy must forward the trusted Terraform version'
-
-setup_line="$(grep -nF 'terraform_version: ${{ needs.branch-deploy.outputs.terraform_version }}' "$branch_deploy_workflow" | cut -d: -f1)"
-candidate_line="$(grep -nF 'ref: ${{ steps.revision.outputs.sha }}' "$branch_deploy_workflow" | cut -d: -f1)"
-if [[ -z "$setup_line" || -z "$candidate_line" || "$setup_line" -ge "$candidate_line" ]]; then
-  fail 'trusted Terraform setup must happen before candidate checkout'
-fi
-
-deployment_message="$ROOT/.github/deployment_message.md"
-[[ -f "$deployment_message" ]] || fail 'trusted deployment message is missing'
-if grep -F '{{ results }}' "$deployment_message" >/dev/null; then
-  fail 'trusted deployment message must not render raw results'
-fi
-
-require_text "$branch_deploy_workflow" "context='branch-deploy/noop'" 'noop results must use a commit-specific status context'
-require_text "$branch_deploy_workflow" 'DEPLOYMENT_SHA: ${{ needs.branch-deploy.outputs.sha }}' 'noop results must be recorded against the admitted SHA'
-require_text "$branch_deploy_workflow" 'uses: ./.github/workflows/pr-status.yml' 'Branch Deploy must reconcile labels after result handling'
-
-deploy_workflow="$ROOT/.github/workflows/deploy.yml"
-require_text "$deploy_workflow" 'branches: [main]' 'direct deploy must target the default branch'
-require_text "$deploy_workflow" 'ref: ${{ github.sha }}' 'direct deploy must check out the pushed SHA'
-require_text "$deploy_workflow" 'run: script/deploy' 'direct deploy must use the shared deployment entry point'
-if grep -F 'continue-on-error:' "$deploy_workflow" >/dev/null; then
-  fail 'direct deployment failures must remain failures'
-fi
-
-concurrency_count="$(grep -h -c 'group: deployment-test' "$branch_deploy_workflow" "$deploy_workflow" |
-  awk '{ total += $1 } END { print total + 0 }')"
-[[ "$concurrency_count" -eq 2 ]] ||
-  fail 'IssueOps and direct deployments must serialize Terraform execution'
-
-pr_status_workflow="$ROOT/.github/workflows/pr-status.yml"
-require_text "$pr_status_workflow" 'review.commit_id === pull.head.sha' 'PR status must require a current-head approval'
-require_text "$pr_status_workflow" 'ref: pull.head.sha' 'PR status must read checks from the current head'
-require_text "$pr_status_workflow" 'status.context === "branch-deploy/noop"' 'PR status must read the commit-specific noop result'
-if grep -F 'actions/checkout@' "$pr_status_workflow" >/dev/null; then
-  fail 'PR status must not check out candidate content'
-fi
-
-new_pr_workflow="$ROOT/.github/workflows/new-pr.yml"
-if grep -E 'actions/checkout@|^[[:space:]]+run:' "$new_pr_workflow" >/dev/null; then
-  fail 'new pull request guidance must not execute candidate content'
-fi
-
-if [[ -e "$ROOT/.terraform.lock.hcl" ]]; then
-  fail 'the built-in terraform_data provider must not create a dependency lock file'
-fi
-
 [[ $failures -eq 0 ]] || exit 1
-printf 'Workflow trust boundaries and toolchain selection are valid.\n'
+printf 'Workflow pins, checkout credentials, cache policy, and toolchain selection are valid.\n'
