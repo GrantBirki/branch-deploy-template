@@ -64,3 +64,16 @@ test("missing, malicious, and stale summaries fall back without inventing succes
     assert.ok(!message.includes("{{"));
   }
 });
+
+test("resource-only summaries do not claim that outputs or state are unchanged", () => {
+  for (const actions of [null, ["no-op"], ["read"]]) {
+    const summary = captureSummary({
+      resource_changes: actions ? [{ address: "terraform_data.example", change: { actions } }] : [],
+      output_changes: { receipt: { actions: ["update"], before: "old", after: "new" } },
+    }, identity);
+    const message = renderSummary(JSON.stringify(summary), identity, "success");
+    assert.ok(message.includes("No planned resource changes."));
+    assert.ok(!message.includes("Your infrastructure matches the configuration"));
+    assert.ok(!message.includes("receipt"));
+  }
+});

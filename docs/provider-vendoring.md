@@ -2,7 +2,7 @@
 
 This template needs no provider mirror or dependency lock file. `terraform_data` is built into Terraform, so adding an empty `vendor/` directory or lock file now would be ceremony without a dependency to protect.
 
-The template currently initializes with an empty provider directory, disables module installation, and rejects provider lock files. Change those trusted controls deliberately when introducing a reviewed provider mirror.
+The noop/deploy scripts initialize with an empty provider directory, disable module installation, and reject provider lock files. Bootstrap, lint, and test use ordinary backend-disabled initialization with the caller's Terraform CLI configuration. Change the trusted deployment controls deliberately when introducing a reviewed provider mirror.
 
 If you adapt the template to use an external provider, make provider installation an explicit, reviewed supply-chain change. A practical flow is:
 
@@ -16,5 +16,7 @@ If you adapt the template to use an external provider, make provider installatio
 For example, a project supporting GitHub-hosted Linux runners and both current Mac architectures would lock and mirror `linux_amd64`, `darwin_amd64`, and `darwin_arm64`. Only include platforms the project actually supports. When `vendor/` exists, mark its third-party archives as vendored or binary in `.gitattributes` so repository tooling does not treat them as project source.
 
 The [dependency lock file](https://developer.hashicorp.com/terraform/language/files/dependency-lock) records selected provider versions and package checksums. It does not contain provider archives. The mirror contains the platform-specific archives. Commit and review both; regenerating one without the other should fail validation.
+
+Candidate packages and candidate checksums are not independent provenance. Before loading a provider, trusted tooling must verify it against protected dependency policy or independently authenticated release evidence for an approved candidate commit. Keep routine installation readonly with `-lockfile=readonly`, and fail on missing packages instead of falling back to registry downloads. See [provider integrity](https://github.com/GrantBirki/branch-deploy/blob/main/docs/security_hardening_guides/terraform-plans.md#providers-are-executable-dependencies).
 
 A checked-in mirror is vendoring, not an Actions cache. It makes routine provider installation reproducible and available offline, but it does not make the whole Terraform run hermetic. The Terraform CLI, remote modules, backend, state, external programs, credentials, and provider API calls remain separate inputs. Pin or remove those inputs according to the repository's actual threat model, and do not describe a build as hermetic until routine execution has no undeclared network or host dependencies. [Hermetic Builds](https://software.birki.io/posts/hermetic-builds/) explains the broader goal.
