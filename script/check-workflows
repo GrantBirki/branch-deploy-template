@@ -20,6 +20,10 @@ while IFS= read -r workflow; do
       printf 'error: %s has a non-immutable action reference: %s\n' "$workflow" "$line" >&2
       failures=$((failures + 1))
     fi
+    if [[ ! "$line" =~ \#[[:space:]]v[0-9] ]]; then
+      printf 'error: %s action pin is missing a trailing version comment: %s\n' "$workflow" "$line" >&2
+      failures=$((failures + 1))
+    fi
   done < <(grep -E '^[[:space:]]*-?[[:space:]]*uses:[[:space:]]*[^[:space:]#]+@' "$workflow" || true)
 
   current_checkouts="$(grep -cE 'uses:[[:space:]]*actions/checkout@' "$workflow" || true)"
@@ -56,10 +60,65 @@ if [[ $terraform_pin_count -eq 0 ]]; then
   failures=$((failures + 1))
 fi
 
+for check in lint test acceptance; do
+  check_workflow="$ROOT/.github/workflows/$check.yml"
+  if [[ ! -f "$check_workflow" ]] ||
+    ! grep -Fx "name: $check" "$check_workflow" >/dev/null ||
+    ! grep -Fx "  $check:" "$check_workflow" >/dev/null; then
+    printf 'error: %s must have its own lowercase workflow and job\n' "$check" >&2
+    failures=$((failures + 1))
+  fi
+done
+
+if [[ -e "$ROOT/.github/workflows/ci.yml" ]]; then
+  printf 'error: lint, test, and acceptance must remain separate workflows\n' >&2
+  failures=$((failures + 1))
+fi
+
+if grep -R -E '^[[:space:]]*name:.*[A-Z]' "$ROOT/.github/workflows" >/dev/null; then
+  printf 'error: workflow, job, and step names must remain lowercase\n' >&2
+  failures=$((failures + 1))
+fi
+
+branch_deploy_workflow="$ROOT/.github/workflows/branch-deploy.yml"
+
+if ! grep -F 'github.event.issue.pull_request' "$branch_deploy_workflow" >/dev/null; then
+  printf 'error: Branch Deploy admission must require a pull request comment\n' >&2
+  failures=$((failures + 1))
+fi
+
+if ! grep -F "contains(fromJSON('[\"OWNER\", \"MEMBER\"]'), github.event.comment.author_association)" "$branch_deploy_workflow" >/dev/null; then
+  printf 'error: Branch Deploy admission must allow only OWNER and MEMBER commenters\n' >&2
+  failures=$((failures + 1))
+fi
+
+if grep -F 'COLLABORATOR' "$branch_deploy_workflow" >/dev/null; then
+  printf 'error: COLLABORATOR admission must remain an explicit opt-in\n' >&2
+  failures=$((failures + 1))
+fi
+
+if ! grep -F 'allow_forks: false' "$branch_deploy_workflow" >/dev/null; then
+  printf 'error: Branch Deploy must continue to reject fork pull requests\n' >&2
+  failures=$((failures + 1))
+fi
+
+dependabot_config="$ROOT/.github/dependabot.yml"
+if ! awk '
+  /package-ecosystem:/ { ecosystems++ }
+  /default-days:/ {
+    cooldowns++
+    if ($2 < 5 || $2 > 90) invalid = 1
+  }
+  END { exit !(ecosystems > 0 && ecosystems == cooldowns && !invalid) }
+' "$dependabot_config"; then
+  printf 'error: every Dependabot ecosystem must have a 5-90 day cooldown\n' >&2
+  failures=$((failures + 1))
+fi
+
 if [[ -e "$ROOT/.terraform.lock.hcl" ]]; then
   printf 'error: terraform_data is built in; an external provider lock file was not expected\n' >&2
   failures=$((failures + 1))
 fi
 
 [[ $failures -eq 0 ]] || exit 1
-printf 'Workflow action pins, checkout settings, toolchain version, and cache mode are valid.\n'
+printf 'Workflow layout, action pins, commenter admission, Dependabot cooldown, toolchain version, and cache mode are valid.\n'

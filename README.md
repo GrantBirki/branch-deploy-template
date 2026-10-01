@@ -19,11 +19,13 @@ The same scripts run locally and in GitHub Actions. There is no package manager,
 
 ## IssueOps flow
 
-After this workflow is present on the default branch, open a pull request and wait for CI to pass. A repository writer or administrator can then comment:
+After this workflow is present on the default branch, open a pull request and wait for CI to pass. The trusted `admit` job accepts commands only from commenters whose author association is `OWNER` or `MEMBER`:
 
 ```text
 .noop test
 ```
+
+`author_association` describes the commenter, not the pull request source. This guard supplements `allow_forks: false` and Branch Deploy's permissions, review, confirmation, and exact-SHA checks; add `COLLABORATOR` only when the repository intentionally trusts outside collaborators to request deployments.
 
 The noop path checks out the exact commit approved by Branch Deploy and runs `terraform init`, `terraform validate`, and `terraform plan`. A noop still executes candidate Terraform and repository scripts. It is not a trusted or read-only inspection.
 
@@ -41,7 +43,7 @@ Result mode keeps the original lock when execution is cancelled. A force-cancell
 
 The [Branch Deploy workflow](.github/workflows/branch-deploy.yml) keeps three boundaries explicit:
 
-1. `admit` runs the full-SHA-pinned Branch Deploy action from the default-branch workflow. It checks the command, reviews, CI, actor permissions, confirmation, and lock without checking out pull request content.
+1. `admit` accepts only pull request comments from owners or organization members, then runs the full-SHA-pinned Branch Deploy action from the default-branch workflow. It checks the command, reviews, CI, actor permissions, confirmation, and lock without checking out pull request content.
 2. `terraform` validates the admitted SHA, checks out that exact commit with credential persistence disabled, verifies `HEAD`, and runs the candidate scripts with only `contents: read`. It receives no deployment secrets or environment credentials.
 3. `complete` forwards the unchanged trusted context and job results to Branch Deploy result mode. Result mode reports the real outcome and handles only the original eligible lock.
 
@@ -63,7 +65,9 @@ Nothing persists between jobs or workflow runs. This is deliberate. The example 
 
 ## Tests
 
-- `script/lint` checks Terraform formatting and validation, shell syntax, immutable action pins, checkout credential settings, toolchain pins, and the no-cache policy.
+GitHub runs each entry point in its own lowercase `lint`, `test`, or `acceptance` workflow.
+
+- `script/lint` checks Terraform formatting and validation, shell syntax, trusted commenter admission, immutable action pins, checkout credential settings, toolchain pins, and the no-cache policy.
 - `script/test` runs Terraform's native tests against the real module.
 - `script/acceptance` invokes the public noop and deploy scripts with real Terraform, checks that temporary state is removed, and verifies apply and cleanup failure semantics with a controlled Terraform fixture.
 

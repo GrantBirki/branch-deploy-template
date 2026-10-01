@@ -9,9 +9,12 @@ permissions: {}
 # Cache mode: none. Candidate content is never passed to a privileged job through a cache or artifact.
 jobs:
   admit:
+    name: admit
+    # author_association describes the commenter, not the PR source. Branch Deploy still rejects forks.
     if: >-
       ${{
         github.event.issue.pull_request &&
+        contains(fromJSON('["OWNER", "MEMBER"]'), github.event.comment.author_association) &&
         (startsWith(github.event.comment.body, '.deploy') ||
          startsWith(github.event.comment.body, '.noop') ||
          startsWith(github.event.comment.body, '.lock') ||
@@ -33,7 +36,7 @@ jobs:
       noop: ${{ steps.branch-deploy.outputs.noop }}
       sha: ${{ steps.branch-deploy.outputs.sha }}
     steps:
-      - name: Admit Branch Deploy command
+      - name: admit
         id: branch-deploy
         uses: GrantBirki/branch-deploy@a7a7ea40a15a79a036322c2924ab74f5eded702c # v12.1.0
         with:
@@ -50,6 +53,7 @@ jobs:
           stable_branch: ${{ github.event.repository.default_branch }}
 
   terraform:
+    name: terraform
     needs: admit
     if: >-
       ${{
@@ -61,7 +65,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Validate admitted revision
+      - name: validate revision
         id: revision
         env:
           ADMITTED_SHA: ${{ needs.admit.outputs.sha }}
@@ -73,14 +77,14 @@ jobs:
           fi
           printf 'sha=%s\n' "$ADMITTED_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: Checkout admitted revision
+      - name: checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
           persist-credentials: false
           ref: ${{ steps.revision.outputs.sha }}
 
-      - name: Verify checkout
+      - name: verify checkout
         env:
           ADMITTED_SHA: ${{ steps.revision.outputs.sha }}
         run: |
@@ -91,13 +95,13 @@ jobs:
             exit 1
           fi
 
-      - name: Install Terraform
+      - name: setup terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with:
           terraform_version: 1.16.4
           terraform_wrapper: false
 
-      - name: Run candidate Terraform
+      - name: run terraform
         env:
           DEPLOYMENT_SHA: ${{ steps.revision.outputs.sha }}
           NOOP: ${{ needs.admit.outputs.noop }}
@@ -110,6 +114,7 @@ jobs:
           esac
 
   complete:
+    name: complete
     needs: [admit, terraform]
     if: ${{ always() && needs.admit.outputs.continue == 'true' }}
     runs-on: ubuntu-latest
@@ -119,7 +124,7 @@ jobs:
       deployments: write
       pull-requests: write
     steps:
-      - name: Report Branch Deploy result
+      - name: report result
         uses: GrantBirki/branch-deploy@a7a7ea40a15a79a036322c2924ab74f5eded702c # v12.1.0
         with:
           context: ${{ needs.admit.outputs.context }}
