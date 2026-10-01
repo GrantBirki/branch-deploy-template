@@ -49,8 +49,8 @@ jobs:
           environment_targets: production
           skip_completing: true
 
-  terraform:
-    name: terraform
+  deploy:
+    name: deploy
     outputs:
       summary: ${{ needs.branch-deploy.outputs.noop == 'true' && steps.plan.outputs.summary || steps.apply.outputs.summary }}
     needs: branch-deploy
@@ -66,18 +66,18 @@ jobs:
       - name: validate revision
         id: revision
         env:
-          ADMITTED_SHA: ${{ needs.branch-deploy.outputs.sha }}
+          DEPLOYMENT_SHA: ${{ needs.branch-deploy.outputs.sha }}
           NOOP: ${{ needs.branch-deploy.outputs.noop }}
         run: |
           set -euo pipefail
-          if [[ ! "$ADMITTED_SHA" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
+          if [[ ! "$DEPLOYMENT_SHA" =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
             echo "Branch Deploy did not return an exact Git SHA" >&2
             exit 1
           fi
           [[ "$NOOP" == "true" || "$NOOP" == "false" ]] || exit 1
-          printf 'sha=%s\n' "$ADMITTED_SHA" >> "$GITHUB_OUTPUT"
+          printf 'sha=%s\n' "$DEPLOYMENT_SHA" >> "$GITHUB_OUTPUT"
 
-      - name: checkout tooling
+      - name: checkout trusted tooling
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
@@ -93,13 +93,13 @@ jobs:
 
       - name: verify checkouts
         env:
-          ADMITTED_SHA: ${{ steps.revision.outputs.sha }}
+          DEPLOYMENT_SHA: ${{ steps.revision.outputs.sha }}
           TRUSTED_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           [[ -d trusted && ! -L trusted && -d source && ! -L source ]]
           [[ "$(git -C trusted rev-parse HEAD)" == "$TRUSTED_SHA" ]]
-          [[ "$(git -C source rev-parse HEAD)" == "$ADMITTED_SHA" ]]
+          [[ "$(git -C source rev-parse HEAD)" == "$DEPLOYMENT_SHA" ]]
 
       - name: setup node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0
@@ -135,9 +135,9 @@ jobs:
           DEPLOYMENT_SHA: ${{ steps.revision.outputs.sha }}
         run: trusted/script/deploy
 
-  render:
-    name: render
-    needs: [branch-deploy, terraform]
+  deployment-message:
+    name: deployment-message
+    needs: [branch-deploy, deploy]
     if: >-
       ${{
         always() && needs.branch-deploy.outputs.continue == 'true' &&
@@ -173,13 +173,13 @@ jobs:
         env:
           DEPLOYMENT_SHA: ${{ needs.branch-deploy.outputs.sha }}
           SUMMARY_MODE: ${{ needs.branch-deploy.outputs.noop == 'true' && 'noop' || 'deploy' }}
-          PLAN_SUMMARY: ${{ needs.terraform.outputs.summary }}
-          JOB_RESULT: ${{ needs.terraform.result }}
+          PLAN_SUMMARY: ${{ needs.deploy.outputs.summary }}
+          JOB_RESULT: ${{ needs.deploy.result }}
         run: node .github/scripts/deployment-summary.ts render
 
   status:
     name: status
-    needs: [branch-deploy, terraform, render]
+    needs: [branch-deploy, deploy, deployment-message]
     if: ${{ always() && needs.branch-deploy.outputs.continue == 'true' }}
     runs-on: ubuntu-latest
     permissions:
@@ -191,15 +191,15 @@ jobs:
         uses: GrantBirki/branch-deploy@9a6ed7fac18108babd7fdc3903d3d8f0a5ad8d66  # v12.1.1
         env:
           DEPLOY_MESSAGE: >-
-            ${{ needs.render.outputs.message || format('Terraform job result: {0}. Plan details unavailable; see workflow logs.', needs.terraform.result) }}
+            ${{ needs.deployment-message.outputs.message || format('Terraform job result: {0}. Plan details unavailable; see workflow logs.', needs.deploy.result) }}
         with:
           context: ${{ needs.branch-deploy.outputs.context }}
-          job_results: '["${{ needs.branch-deploy.result }}", "${{ needs.terraform.result }}"]'
+          job_results: '["${{ needs.branch-deploy.result }}", "${{ needs.deploy.result }}"]'
           result_mode: true
 
   pr-status:
     name: pr status
-    needs: [branch-deploy, terraform, status]
+    needs: [branch-deploy, deploy, status]
     if: >-
       ${{
         always() &&
@@ -218,4 +218,4 @@ jobs:
       transition: ${{ needs.branch-deploy.outputs.noop == 'true' && 'noop' || 'deploy' }}
       pr_number: ${{ fromJSON(needs.branch-deploy.outputs.pr_number) }}
       expected_head_sha: ${{ needs.branch-deploy.outputs.sha }}
-      operation_result: ${{ needs.terraform.result }}
+      operation_result: ${{ needs.deploy.result }}
