@@ -20,8 +20,17 @@ jobs:
         uses: GrantBirki/comment@937820f3623fd0e300294bcc64ac7577fc0ad4cc  # v3.0.3
         with:
           body: |
-            ### branch deploy
+            ### 👋 Thanks for opening a pull request!
 
-            Run `.noop test` after CI passes and inspect its result before deploying. Status labels summarize reviews and CI; they do not record noop or deployment completion.
+            If you are new, please read the deployment instructions below to learn how to ship your changes to production:
 
-            Run `.deploy test` only when you intend to exercise the disposable local-state apply flow. Branch Deploy enforces authorization, reviews, checks, confirmation, fork denial, and the exact commit.
+            1. 🧪 Run a noop deployment with `.noop` as a comment on this PR
+            1. 👀 Observe the CI and `noop` output on this pull request to ensure it is passing and doing what it is supposed to do
+            1. ✔️ Obtain an approval/review on this pull request
+            1. 🚀 Branch deploy your pull request to production with `.deploy`
+
+                &gt; If anything goes wrong, rollback with `.deploy main`
+
+            1. 🎉 Merge!
+
+            If you need additional help, please view the [usage guide](https://github.com/grantbirki/branch-deploy/blob/main/docs/usage.md).
