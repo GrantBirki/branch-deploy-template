@@ -30,6 +30,8 @@ test("renderer bounds noisy output and preserves literal template-like data", ()
   const template = "{{ actor }}\n{{ results }}";
   const rendered = renderTemplateText(template, "{{ actor }}", "", "summary");
   assert.ok(rendered.includes("```terraform\n{{ actor }}\n```"));
+  const literal = "$& $` $' $$ {{ actor }}";
+  assert.ok(renderTemplateText(template, literal, "", "summary").includes(`\`\`\`terraform\n${literal}\n\`\`\``));
   assert.throws(() => renderTemplateText("missing", "", "", ""));
   assert.throws(() => renderTemplateText("{{ results }} {{ results }}", "", "", ""));
 });

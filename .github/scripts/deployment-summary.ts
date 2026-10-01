@@ -81,7 +81,7 @@ export function captureSummary(plan: unknown, identity: Identity): Summary {
 
 export function renderSummary(serialized: string, identity: Identity, outcome: string,
   templatePath = resolve(repositoryRoot, ".github/deployment_message.md")): string {
-  if (!["success", "failure", "cancelled", "skipped"].includes(outcome)) throw new Error("Invalid job result");
+  if (!["success", "failure", "cancelled", "skipped", "unknown"].includes(outcome)) throw new Error("Invalid job result");
   const result = `Terraform job result: **${outcome}**.`;
   let data: Summary;
   try {
@@ -89,14 +89,26 @@ export function renderSummary(serialized: string, identity: Identity, outcome: s
   } catch {
     return `${result} Plan details are unavailable or invalid; see the workflow logs.`;
   }
-  const summary = `${outcome === "success" ? "" : `${result}\n\n`}${
-    renderResourceChangeSummary(classifyResourceChanges(data.resource_changes))}`;
+  const groups = classifyResourceChanges(data.resource_changes);
+  const hasChanges = Object.values(groups).some(addresses => addresses.length > 0);
+  const summary = [
+    outcome === "success" ? "" : result,
+    hasChanges && (identity.mode === "apply" || outcome !== "success") ? "**Planned changes**" : "",
+    renderResourceChangeSummary(groups),
+  ].filter(Boolean).join("\n\n");
+  const replacements = data.resource_changes
+    .filter(resource => resource.change!.actions!.length === 2)
+    .map(resource => `# ${resource.address}: ${resource.change!.actions![0] === "create" ? "create before destroy" : "destroy, then create"}`);
+  const totals = `Plan: ${groups.imports.length ? `${groups.imports.length} to import, ` : ""}${
+    groups.creates.length + groups.replaces.length} to add, ${groups.updates.length} to change, ${
+    groups.deletes.length + groups.replaces.length} to destroy.`;
   const display = {
-    text: data.resource_changes.map(resource => `${resource.address}: ${resource.change!.actions!.join(", ")}`).join("\n") || "No planned resource changes.",
+    text: hasChanges ? [replacements.join("\n"), totals].filter(Boolean).join("\n\n") : "",
     notice: "",
   };
-  const fitted = fitCommentToGitHubLimit(templatePath, summary, display, identity.mode);
-  return renderDeploymentResults(fitted.displayOutput.text, fitted.displayOutput.notice, fitted.summary, identity.mode);
+  // Both operations capture a saved plan. The job result does not supply apply totals.
+  const fitted = fitCommentToGitHubLimit(templatePath, summary, display, "plan");
+  return renderDeploymentResults(fitted.displayOutput.text, fitted.displayOutput.notice, fitted.summary, "plan");
 }
 
 function identityFromEnvironment(): Identity {

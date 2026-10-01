@@ -17,6 +17,8 @@ Branch Deploy fetches [the exact deployment message](../.github/deployment_messa
 
 The `production` action target is not a job-level GitHub environment binding. The jobs do not request environment secrets. If an environment is added later, its branch rule checks the workflow run's `GITHUB_REF`, not a subsequent PR checkout. An `issue_comment` run can therefore satisfy a `main` rule while evaluating PR Terraform. Use a separately designed credentialed execution path; the branch rule and trusted helper checkout alone do not isolate secrets from candidate configuration. See [GitHub's environment rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments) and [trusted checkout guidance](https://github.com/GrantBirki/branch-deploy/blob/main/docs/trusted-checkouts.md).
 
+The [comment guide](deployment-comments.md) shows how to keep visible plan intent, actual execution evidence, and missing details distinct without publishing resource values.
+
 ## Hardening guides
 
 Use the [Branch Deploy hardening guides](https://github.com/GrantBirki/branch-deploy/tree/main/docs/security_hardening_guides) when adapting this demo:
