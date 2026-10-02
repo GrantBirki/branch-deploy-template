@@ -12,7 +12,7 @@ Keep shared helpers small and resource-independent. Tests should verify executab
 
 `issue_comment` workflows execute from the default branch. Bootstrap trusted workflows and helpers there before expecting a PR to use new deployment behavior. Keep exact checkout verification, actor and fork restrictions, CI checks, protected credentials, state locking, and trusted reporting when adapting the execution path. Read the [trust model](security.md) before giving candidate Terraform access to credentials.
 
-Review summary address handling and resource-count and byte limits before a large adoption. A helper change in a PR cannot expand the reporting capacity of the default-branch workflow running that PR. Keep limits bounded and reporting free of state values, import IDs, secrets, and raw exports.
+Review summary address handling and resource-count and byte limits before a large adoption. A helper change in a PR cannot expand the reporting capacity of the default-branch workflow running that PR. Keep limits bounded and the structured summary free of values, import IDs, secrets, and raw exports. If the comment audience may see attribute values, follow the separate [native plan diff guidance](deployment-comments.md#native-plan-diffs-in-derived-projects), including sensitivity limits and intro trimming.
 
 The template explicitly sets `deployment_confirmation: "false"`, matching the action's default. This avoids the extra confirmation reaction. Choose this setting for the project's trust model; an owner-operated private project may keep it disabled while retaining deployment authorization, CI, and review checks. Use `true` when the project calls for the additional confirmation.
 

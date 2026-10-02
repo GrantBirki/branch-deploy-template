@@ -2,7 +2,7 @@
 
 A result should make sense with its details closed: one outcome, one metadata block, then the changed-resource groups. Put useful supporting text in one fenced disclosure below the groups. Leave unchanged resources out entirely.
 
-This guide preserves the approved, sanitized examples from [Cloudflare issue #16](https://github.com/GrantBirki/cloudflare/issues/16) for projects built from this template. Addresses below use the built-in `terraform_data` type to illustrate the layout; they are not a resource inventory or executable configuration.
+The examples below use the built-in `terraform_data` type to illustrate the layout for projects built from this template; they are not a resource inventory or executable configuration.
 
 ## What the template can report
 
@@ -20,7 +20,7 @@ Copy the contents of each outer `markdown` block into a GitHub preview. The inne
 
 All usernames, branches, timestamps, addresses, and URLs below are synthetic placeholders. `https://example.invalid/workflow-run` stands for the actual admitted workflow run, and `2000-01-01T00:00:00Z` stands for its actual completion time. Every resource address is invented. Substitute only validated metadata; never copy real identifiers or values from source screenshots into fixtures.
 
-The fenced text is a small, value-free summary generated from validated metadata. It is **not** permission to publish raw Terraform output. Do not invent resource bodies, attribute diffs, provider messages, or apply events to fill the box. Layout examples do not expand the summary schema or authorize publishing more data.
+The template generates a small, value-free summary from validated metadata. Derived projects can opt into [native plan diffs](#native-plan-diffs-in-derived-projects) when attribute values are appropriate for their comment audience. Keep raw plan JSON, state, binary plans, and apply logs out of comments. Layout examples do not expand the executable summary schema; never invent resource bodies or execution evidence to fill the box.
 
 ## 1. Successful noop with a complete zero-change plan
 
@@ -251,14 +251,70 @@ Bound rows without losing the full validated count. An Import group with 30 reso
 
 Display truncation and incomplete source data are different. Exact totals are appropriate when all input was validated and only the displayed rows were shortened. A missing, rejected, oversized, or partially captured summary cannot establish zero changes or exact full totals. Do not convert either case into an empty successful plan.
 
+## Native plan diffs in derived projects
+
+A useful Plan disclosure shows what will change: the resource block, its attribute diff, and the plan totals. Keep the resource groups above it so the comment is readable while collapsed. This is an optional adaptation; the template's executable example still reports only resource actions and aggregate counts.
+
+Capture the human-readable output of `terraform show -no-color` from the same saved plan used for the structured summary and any later apply. Use the pinned Terraform binary through trusted tooling. Keep that text separate from validated action counts and execution results: a formatting failure must not erase known counts, claim zero changes, or change whether an apply succeeded.
+
+Terraform masks values marked sensitive in its human-readable output. Unmarked values, identifiers, and output values can remain visible. Choose this format only when those details are suitable for everyone who can read the PR; trimming an intro is not secret scrubbing. Do not forward `terraform show -json` into a comment or try to reconstruct a redacted diff from its values.
+
+Bind the text to the admitted SHA, run, attempt, and mode. Bound its UTF-8 size before transferring it between jobs; reject malformed text and preserve complete characters when truncating. Validate and render in the existing fresh, read-only reporting job, then pass only bounded Markdown and GitHub job results to privileged completion. Treat the text as display data, not evidence that candidate code was safe or execution succeeded. Keep literal template replacement, a code fence longer than any backtick run inside the text, and safe multiline output delimiters.
+
+If the text is missing, invalid, or suppressed by GitHub's secret masking, keep the validated groups and totals and link to the workflow logs. Do not bypass masking. Put a truncation notice beside shortened detail. A genuine no-change result can stay compact without repeating an empty diff.
+
+### Example with the intro removed
+
+This invented attribute diff illustrates the expanded Plan section. In an actual comment, use the saved plan's native text rather than filling a resource-shaped template:
+
+````markdown
+### Update (1)
+
+🟡 `terraform_data.example`
+
+<details><summary>Plan</summary>
+
+```terraform
+# terraform_data.example will be updated in-place
+~ resource "terraform_data" "example" {
+    ~ input = "before" -> "after"
+  }
+
+Plan: 0 to add, 1 to change, 0 to destroy.
+```
+
+</details>
+````
+
+For a deploy result, show independently validated actual apply totals above these groups. The saved diff remains labelled **Plan**, even after a successful apply. Prefix its fenced text with `# Saved plan; actual apply totals are shown above.` so planned intent cannot be mistaken for per-resource completion. Preserve failure, cancellation, unknown execution, and reporting-failure distinctions from the examples above.
+
+### Trim the standard opening text
+
+Remove the standard opening paragraph, action legend, and redundant “Terraform will perform the following actions” line before applying the display byte limit. An anchored match leaves warnings, drift notices, resource bodies, totals, and unfamiliar formats intact. For example:
+
+```typescript
+function trimPlanIntro(text: string): string {
+  return text.trimStart().replace(
+    /^Terraform used the selected providers to generate the following execution\r?\nplan\. Resource actions are indicated with the following symbols:\r?\n(?:(?: {2}[+~-]|[+-]\/[+-]| <=) [^\r\n]+\r?\n)+\r?\nTerraform will perform the following actions:\r?\n\r?\n/,
+    "",
+  );
+}
+```
+
+This deliberately recognizes one known opening format. If Terraform emits a different format or a warning before it, show the original text. Do not remove everything before the first resource or broadly filter lines containing “Warning”, “Plan”, or action symbols; those can carry useful evidence or appear inside values. Keep sensitivity markers, replacement order, computed values, output changes, and totals as Terraform printed them.
+
+Use small fixtures for the normal intro, multiple action types, CRLF, unknown or incomplete openings, diagnostics before and after the plan, and truncation after trimming. Also cover stale identities, missing detail, Markdown/template-like values, and actual apply results staying independent of plan text. These tests need no provider credentials or new dependencies.
+
+Because `issue_comment` uses trusted helpers from the default branch, land reporting changes there before expecting a resource PR's `.noop` to show the new format. Then refresh that PR as needed and run a fresh `.noop` to verify the published comment.
+
 ## Adapting the renderer
 
 - Keep [.github/deployment_message.md](../.github/deployment_message.md) responsible for the outer heading, actor, branch, environment, logs, and completion time. Render this metadata once. Align its status with known execution and reporting outcomes; omit unavailable terminal timestamps.
 - Keep the visible summary and the supporting disclosure separate in `renderSummary()` and `renderDeploymentResults()`. Use real third-level headings, normal blank-line spacing, and two trailing spaces between address rows. Omit empty groups and empty disclosures. Avoid a second group inventory or a routine warning under every result.
 - Capture additional evidence only when a derived project needs a richer case: complete-plan effects for **No changes**, bounded output-change counts for **Outputs**, and validated execution results for actual apply totals. Saved-plan addresses stay planned unless per-resource execution evidence exists. Replacements count as one replaced resource and contribute to both add and destroy totals.
 - Preserve execution results independently of rendering. Missing details do not prove execution failed; a successful apply phase alone does not prove that later verification or cleanup succeeded. Keep these phases distinct when adapting the demonstration to persistent state.
-- Generate public text from validated, bounded fields. Keep attributes, output values, import IDs, raw diagnostics, and secrets out of comments. Escape addresses and metadata for their Markdown context when broadening the current address grammar. Preserve literal template replacement, Unicode-safe truncation, run/SHA/attempt/mode checks, and multiline output delimiter safety.
+- Generate public text from validated, bounded fields. The template excludes attributes, output values, import IDs, and raw diagnostics. A derived project that opts into native plan diffs must review their visibility and preserve the separate bounded text path described above. Escape addresses and metadata for their Markdown context when broadening the current address grammar. Preserve literal template replacement, Unicode-safe truncation, run/SHA/attempt/mode checks, and multiline output delimiter safety.
 
 Use focused fixtures in [deployment-summary.test.ts](../tests/deployment-summary.test.ts) and [render-deployment-message.test.ts](../tests/render-deployment-message.test.ts): unchanged and read-only rows disappear, imports survive `no-op`, replacement orders and counts stay correct, failed execution cannot become success, missing evidence cannot become no changes, and truncated groups retain accurate counts. Keep the existing sensitive-data and identity validation coverage. Test extra evidence cases alongside their implementation in derived projects; no provider credentials, live IssueOps run, giant snapshots, or configuration inventory tests are needed for this layout.
 
-For visual review, preview the raw Markdown on GitHub with Plan/Apply both closed and expanded. Check the no-change, import, mixed-plan, successful-apply, and failed-apply examples. The outcome, metadata, and every displayed group should be readable before opening the disclosure; opening it should reveal a fenced, value-free summary rather than a repeated resource list.
+For visual review, preview the raw Markdown on GitHub with Plan/Apply both closed and expanded. Check the no-change, import, mixed-plan, successful-apply, and failed-apply examples. The outcome, metadata, and every displayed group should be readable before opening the disclosure; opening it should reveal useful fenced detail: the template's value-free summary or the derived project's approved native diff.
