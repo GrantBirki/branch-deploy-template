@@ -1,12 +1,13 @@
 name: branch-deploy
 
+cache-mode: none
+
 on:
   issue_comment:
     types: [created]
 
 permissions: {}
 
-# Cache mode: none. Only validated resource-action summaries reach the reporting job.
 jobs:
   branch-deploy:
     name: branch-deploy

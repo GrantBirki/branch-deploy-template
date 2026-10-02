@@ -1,5 +1,7 @@
 name: deploy
 
+cache-mode: none
+
 on:
   push:
     branches: [main]

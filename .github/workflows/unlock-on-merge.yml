@@ -1,5 +1,7 @@
 name: unlock on merge
 
+cache-mode: none
+
 on:
   pull_request:
     types: [closed]

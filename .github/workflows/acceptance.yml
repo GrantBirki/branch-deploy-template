@@ -1,5 +1,7 @@
 name: acceptance
 
+cache-mode: none
+
 on:
   pull_request:
   push:
