@@ -40,7 +40,7 @@ Or run the apply, verification, and cleanup lifecycle:
 
 Both commands use `production`, the only deployment environment. Separate `terraform plan` and `terraform apply` steps show which path ran in Actions. Branch Deploy reports the result on the pull request, and PR Status maintains its lifecycle label.
 
-Deployments use sticky locks, released on merge or with `.unlock`. The workflow explicitly denies forks and configures `GrantBirki` as an admin who can deploy without branch-protection approvals. Review that setting when using this template.
+Deployments use sticky locks, released on merge or with `.unlock`. See [rollback instructions](docs/operations.md#rollback-to-main) for recovery. The workflow explicitly denies forks and configures `GrantBirki` as an admin who can deploy without branch-protection approvals. Review that setting when using this template.
 
 ## How it works
 
