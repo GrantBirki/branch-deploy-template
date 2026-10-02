@@ -1,12 +1,13 @@
 name: branch-deploy
 
+cache-mode: none
+
 on:
   issue_comment:
     types: [created]
 
 permissions: {}
 
-# Cache mode: none. Only validated resource-action summaries reach the reporting job.
 jobs:
   branch-deploy:
     name: branch-deploy
@@ -48,6 +49,7 @@ jobs:
           deployment_confirmation: "false"
           commit_verification: true
           environment_targets: production
+          stable_branch: ${{ github.event.repository.default_branch }}
           skip_completing: true
 
   deploy:
@@ -101,6 +103,21 @@ jobs:
           [[ -d trusted && ! -L trusted && -d source && ! -L source ]]
           [[ "$(git -C trusted rev-parse HEAD)" == "$TRUSTED_SHA" ]]
           [[ "$(git -C source rev-parse HEAD)" == "$DEPLOYMENT_SHA" ]]
+
+      - name: check revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEPLOYMENT_REF: ${{ needs.branch-deploy.outputs.ref }}
+          DEPLOYMENT_SHA: ${{ steps.revision.outputs.sha }}
+          TRUSTED_SHA: ${{ github.sha }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          set -euo pipefail
+          if [[ "$DEPLOYMENT_REF" == "$DEFAULT_BRANCH" ]]; then
+            # Rollback uses trusted main, independently of the PR's head and CI.
+            [[ "$DEPLOYMENT_SHA" == "$TRUSTED_SHA" ]] || { echo "Rollback must select the trusted default-branch revision" >&2; exit 1; }
+            [[ "$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$DEFAULT_BRANCH" --jq .object.sha)" == "$TRUSTED_SHA" ]] || { echo "Default branch changed or could not be verified; post a fresh command" >&2; exit 1; }
+          fi
 
       - name: setup node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020  # v7.0.0

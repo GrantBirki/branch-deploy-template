@@ -1,5 +1,7 @@
 name: new pull request
 
+cache-mode: none
+
 on:
   pull_request:
     branches:

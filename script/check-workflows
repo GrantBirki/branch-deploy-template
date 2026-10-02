@@ -16,6 +16,11 @@ fail() {
 }
 
 while IFS= read -r workflow; do
+  grep -qx 'cache-mode: none' "$workflow" || fail "$workflow must declare cache-mode: none"
+  if grep -E '^[[:space:]]*cache-mode:' "$workflow" | grep -qvE '^[[:space:]]*cache-mode: none$'; then
+    fail "$workflow must not override cache-mode: none"
+  fi
+
   while IFS= read -r line; do
     reference="${line#*@}"
     reference="${reference%%[[:space:]#]*}"
