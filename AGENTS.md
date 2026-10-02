@@ -11,7 +11,7 @@
 - Treat `.terraform-version` as the only Terraform version source. Pin Node in `.node-version`, link to version files in docs, and preserve exact provider versions and lock files when adapting the template.
 - Keep GitHub Actions pinned to full commit SHAs, permissions minimal, checkout credentials disabled, and `cache-mode: none` explicit on every workflow with no job overrides. Disabling automatic caching alone does not deny cache access.
 - Keep trusted admission and result handling separate from candidate Terraform execution. A noop executes candidate code and is not a trusted inspection.
-- Preserve default-branch rollback independently of the comment's PR head, state, and CI. Require the selected default-branch SHA to match the trusted workflow revision and current remote default branch; scope extra PR checks to PR deployments. See [rollback guidance](docs/operations.md#rollback-to-the-default-branch).
+- Let Branch Deploy own PR/CI admission and deployment revision selection, including `.deploy main` rollbacks. Omit `stable_branch` to retain its fixed `main` default; verify the selected checkout without duplicating the action's checks. See [rollback guidance](docs/operations.md#rollback-to-main).
 - Preserve exact-SHA checkout and verification for trusted tooling and candidate Terraform. Validate bounded candidate summaries in a fresh read-only job; privileged reporting may receive only its rendered Markdown and GitHub job results. Never execute candidate code or consume candidate artifacts or caches in a privileged job.
 - Continue using the built-in `terraform_data` resource unless the example truly needs an external provider. Follow `docs/provider-vendoring.md` before adding one.
 

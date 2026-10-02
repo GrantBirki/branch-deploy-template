@@ -26,13 +26,13 @@ When a summary is unavailable, distinguish an execution failure from a rendering
 
 The [unlock on merge workflow](../.github/workflows/unlock-on-merge.yml) asks Branch Deploy to release locks created by a pull request after GitHub reports that pull request merged. It uses the same `production` environment target and does not check out or run candidate content. The pinned action's compare-and-delete protection leaves a lock alone if another operation replaced it during cleanup.
 
-## Rollback to the default branch
+## Rollback to main
 
-Use `.noop main` to preview the default branch and `.deploy main` to deploy it. Branch Deploy treats its configured `stable_branch` as trusted and skips the comment's PR head, review, and CI requirements for this target. A closed PR or a deleted PR branch can still serve as the command and reporting location. Actor authorization and deployment locks still apply.
+Use `.noop main` to preview `main` and `.deploy main` to deploy it. Omit `stable_branch` to retain the action's fixed `main` default. Branch Deploy treats this target as trusted and skips the comment's PR head, review, and CI requirements. A closed PR or a deleted PR branch can still serve as the command and reporting location. Actor authorization and deployment locks still apply.
 
-The workflow uses the action's selected `ref` and exact `sha`, not a branch name parsed from the comment. For default-branch commands, that SHA must match both `github.sha` (the trusted workflow revision) and the current remote default branch before execution. If the branch moved while queued, post a fresh command. Ordinary PR deployments retain Branch Deploy's normal admission checks, and rollback results do not advance the PR's lifecycle label.
+Branch Deploy selects and revalidates the deployment revision during admission. The execution job checks out and verifies that exact `sha`; trusted helpers still come from `github.sha`. Ordinary PR deployments retain the action's normal admission checks, and rollback results do not advance the PR's lifecycle label.
 
-When adapting the template, keep extra PR-head or CI checks inside the PR path so they cannot block recovery to the default branch. Preserve trusted tooling, exact checkouts, input checks, state locking, and result-mode context for both paths. Rollback reconciles the default branch's configuration against current state; it cannot restore deleted data or undo a change already merged there. This template only demonstrates that selection using disposable local state.
+When adapting the template, rely on Branch Deploy for PR/CI admission and revision selection instead of duplicating those checks in the execution job. Preserve trusted tooling, exact checkouts, input checks, state locking, and result-mode context for both paths. Rollback reconciles the default branch's configuration against current state; it cannot restore deleted data or undo a change already merged there. This template only demonstrates that selection using disposable local state.
 
 ## Pull request status
 
@@ -61,6 +61,6 @@ The fallback checks out and verifies the exact default-branch SHA selected by th
 
 This demonstrates a deployment-history comparison, not persistent infrastructure. A successful IssueOps deployment records completion of the disposable apply-and-destroy exercise. An active GitHub deployment record does not mean Terraform resources or state remain. The comparison is an observation, not an atomic deployment lock.
 
-GitHub does not allow an expression in a push branch filter. If the repository's default branch is renamed, update the literal `main` filters in `.github/workflows/` at the same time. IssueOps already sets Branch Deploy's `stable_branch` from the repository's default branch.
+GitHub does not allow an expression in a push branch filter. If the repository's default branch is renamed, update the literal `main` filters in `.github/workflows/` and explicitly review the fixed `stable_branch` setting at the same time. Do not derive the stable branch from event data.
 
 The direct and IssueOps paths can overlap because they own separate temporary state. There is no shared Terraform state to protect with a GitHub concurrency group. Branch Deploy still coordinates its IssueOps commands with its own locks; unlock-on-merge remains a separate metadata workflow.
