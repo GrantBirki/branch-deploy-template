@@ -24,7 +24,7 @@
 ## Adapting the template
 
 - Prefer native Terraform resources, import blocks, and lifecycle features over resource-specific helper code. Ordinary resource changes in a derived infrastructure repository should be HCL-only.
-- Small TypeScript helpers using Node built-ins are appropriate for shared workflow behavior and bounded, value-free reporting. Avoid resource allowlists, parallel configuration formats, or policy engines that need edits whenever HCL changes.
+- Small TypeScript helpers using Node built-ins are appropriate for shared workflow behavior and bounded reporting. The template keeps resource values out of comments; derived projects can follow [the native plan diff guide](docs/deployment-comments.md#native-plan-diffs-in-derived-projects) when their comment audience may see those values. Keep display text separate from counts and execution results. Avoid resource allowlists, parallel configuration formats, or policy engines that need edits whenever HCL changes.
 - Keep the disposable demonstration and its acceptance tests here. In a derived project, retain acceptance and PR-status workflows only when they provide useful coverage or operator feedback; do not copy them merely because the template has them. Keep CI small and batch pushes to avoid redundant runs.
 - Follow [the adaptation guide](docs/adapting.md) before introducing persistent state, credentials, external providers, or resource imports.
 
