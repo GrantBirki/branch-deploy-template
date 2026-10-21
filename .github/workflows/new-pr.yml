@@ -20,7 +20,7 @@ jobs:
 
     steps:
       - name: fence
-        uses: openai/fence@6ddc6df2e7dd8826022809a8143573247fb3b486 # pin@v0.10.3
+        uses: openai/fence@6b6abd213883b594e579502057383b488ed9bb13 # pin@v0.11.1
         with:
           mode: audit
 
