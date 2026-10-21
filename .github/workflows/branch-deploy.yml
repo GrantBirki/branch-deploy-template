@@ -41,7 +41,7 @@ jobs:
     steps:
       - name: branch-deploy
         id: branch-deploy
-        uses: GrantBirki/branch-deploy@9a6ed7fac18108babd7fdc3903d3d8f0a5ad8d66  # v12.1.1
+        uses: GrantBirki/branch-deploy@7a6af23b802f1284c5bb2f2e42edf79c667c067d  # v12.2.0
         with:
           sticky_locks: "true"
           admins: "GrantBirki"
@@ -190,7 +190,7 @@ jobs:
       pull-requests: write
     steps:
       - name: report result
-        uses: GrantBirki/branch-deploy@9a6ed7fac18108babd7fdc3903d3d8f0a5ad8d66  # v12.1.1
+        uses: GrantBirki/branch-deploy@7a6af23b802f1284c5bb2f2e42edf79c667c067d  # v12.2.0
         env:
           DEPLOY_MESSAGE: >-
             ${{ needs.deployment-message.outputs.message || format('Terraform job result: {0}. Plan details unavailable; see workflow logs.', needs.deploy.result) }}
