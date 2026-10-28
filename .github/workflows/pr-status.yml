@@ -37,7 +37,7 @@ jobs:
       queue: max
     steps:
       - name: fence
-        uses: openai/fence@6ddc6df2e7dd8826022809a8143573247fb3b486 # pin@v0.10.3
+        uses: openai/fence@601415578ff6d87c8dd07a01e77dbbfc83fa7536 # pin@v0.12.1
         with:
           mode: audit
 
