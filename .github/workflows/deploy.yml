@@ -22,7 +22,7 @@ jobs:
     steps:
       - name: deployment check
         id: deployment-check
-        uses: GrantBirki/branch-deploy@9a6ed7fac18108babd7fdc3903d3d8f0a5ad8d66  # v12.1.1
+        uses: GrantBirki/branch-deploy@18049b1a468b9a0220663f56017d2ba309d08e6b  # v12.3.0
         with:
           merge_deploy_mode: true
           environment: production
