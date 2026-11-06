@@ -42,7 +42,7 @@ jobs:
           mode: audit
 
       - name: reconcile branch-deploy state
-        uses: GrantBirki/pr-status@c5f7a6585b4a86b0bd618c4bac9f5197318c8d6b # pin@main
+        uses: GrantBirki/pr-status@288da82caa6983f9d2d642b49666ab0bdb5d36ab # pin@main
         with:
           mode: branch-deploy
           transition: ${{ inputs.transition }}
