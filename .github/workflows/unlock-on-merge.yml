@@ -17,7 +17,7 @@ jobs:
       contents: write
     steps:
       - name: unlock on merge
-        uses: GrantBirki/branch-deploy@10ee06ba892042c082c9bd5abacdd9b5f4a6efbd  # v12.4.0
+        uses: GrantBirki/branch-deploy@7173dcbb72a30da0148076fade87260ddd1b5e28  # v12.4.2
         with:
           environment_targets: production
           unlock_on_merge_mode: true
